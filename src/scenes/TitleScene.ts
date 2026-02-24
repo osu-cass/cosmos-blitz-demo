@@ -10,7 +10,7 @@ export class TitleScene extends Phaser.Scene {
     const height = this.scale.height;
 
     this.add
-      .text(width / 2, height * 0.38, 'STAR BOUNCE ARENA', {
+      .text(width / 2, height * 0.38, 'COSMO BLITZ DX', {
         fontFamily: 'Arial',
         fontSize: '72px',
         color: '#ffffff',

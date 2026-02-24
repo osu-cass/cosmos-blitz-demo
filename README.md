@@ -1,4 +1,4 @@
-# Top-Down Arena Shooter (Phaser + TypeScript + Bun)
+# Cosmo Blitz DX (Phaser + TypeScript + Bun)
 
 A simple single-player 2D top-down arena shooter designed for fast live editing.
 
