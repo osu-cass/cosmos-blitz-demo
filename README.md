@@ -2,6 +2,14 @@
 
 A simple single-player 2D top-down arena shooter designed for fast live editing.
 
+## Project status
+
+This repository is primarily AI-generated code and is intended as a demo/prototype.
+
+Pull requests are not accepted.
+
+See `CONTRIBUTING.md` for details.
+
 ## Install
 
 ```bash
@@ -68,3 +76,7 @@ bun run build
 - Keep each feature in its own module.
 - Prefer changing values in constants first before changing behavior code.
 - Existing extension-point comments in `GameScene` indicate safe insertion areas.
+
+## License
+
+This project is licensed under the MIT License. See `LICENSE`.
