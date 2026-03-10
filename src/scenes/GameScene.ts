@@ -71,6 +71,19 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
+    this.input.keyboard?.on('keydown-Q', () => {
+      if (this.gameOver) {
+        this.physics.world.resume();
+        this.scene.start('TitleScene');
+      }
+    });
+
+    this.input.keyboard?.on('keydown-ESC', () => {
+      if (!this.gameOver) {
+        this.setGameOver();
+      }
+    });
+
     this.input.keyboard?.on('keydown-F', () => {
       if (this.scale.isFullscreen) {
         this.scale.stopFullscreen();
@@ -309,11 +322,19 @@ export class GameScene extends Phaser.Scene {
     this.waveText = this.add.text(16, 44, '', style).setDepth(10);
     this.remainingText = this.add.text(16, 76, '', style).setDepth(10);
 
+    this.add
+      .text(this.scale.width - 16, 12, 'ESC to Forfeit', {
+        ...style,
+        fontSize: '24px',
+      })
+      .setOrigin(1, 0)
+      .setDepth(10);
+
     this.gameOverText = this.add
       .text(
         this.scale.width / 2,
         this.scale.height / 2,
-        'GAME OVER\nPress R to Restart',
+        'GAME OVER\nPress R to Restart\nPress Q to Quit',
         {
           ...style,
           fontSize: '58px',
