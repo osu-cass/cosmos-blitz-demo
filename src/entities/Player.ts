@@ -23,6 +23,7 @@ export class Player {
   private shieldHits = 0;
   private burstActiveUntil = 0;
   private minigunActiveUntil = 0;
+  private laserActiveUntil = 0;
   private invulnerableUntil = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
@@ -84,6 +85,10 @@ export class Player {
     return sceneTimeMs < this.minigunActiveUntil;
   }
 
+  hasLaser(sceneTimeMs: number): boolean {
+    return sceneTimeMs < this.laserActiveUntil;
+  }
+
   grantShield(): void {
     this.shieldHits = PICKUP_CONFIG.shieldAbsorbHits;
     this.sprite.setTint(0x9be7ff);
@@ -95,6 +100,10 @@ export class Player {
 
   grantMinigun(sceneTimeMs: number): void {
     this.minigunActiveUntil = sceneTimeMs + PICKUP_CONFIG.minigunDurationMs;
+  }
+
+  grantLaser(sceneTimeMs: number): void {
+    this.laserActiveUntil = sceneTimeMs + PICKUP_CONFIG.laserDurationMs;
   }
 
   heal(amount: number): boolean {

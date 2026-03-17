@@ -16,6 +16,7 @@ export class GameScene extends Phaser.Scene {
   private lavaPools: { x: number; y: number; radius: number }[] = [];
   private portal?: { x: number; y: number; radius: number };
   private backgroundGraphics!: Phaser.GameObjects.Graphics;
+  private laserGraphics!: Phaser.GameObjects.Graphics;
   private player!: Player;
   private enemyGroup!: Phaser.Physics.Arcade.Group;
   private enemies: Enemy[] = [];
@@ -25,6 +26,7 @@ export class GameScene extends Phaser.Scene {
   private shieldPickup?: Phaser.GameObjects.Image;
   private burstPickup?: Phaser.GameObjects.Image;
   private minigunPickup?: Phaser.GameObjects.Image;
+  private laserPickup?: Phaser.GameObjects.Image;
   private donutPickup?: Phaser.GameObjects.Image;
 
   private healthText!: Phaser.GameObjects.Text;
@@ -47,8 +49,11 @@ export class GameScene extends Phaser.Scene {
   private burstExpiresAt = 0;
   private nextMinigunSpawnAt = 0;
   private minigunExpiresAt = 0;
+  private nextLaserSpawnAt = 0;
+  private laserExpiresAt = 0;
   private donutExpiresAt = 0;
   private lastLavaDamageAt = 0;
+  private lastLaserTickAt = 0;
   private lastPortalTeleportAt = 0;
   private gameOver = false;
   private isPaused = false;
@@ -66,6 +71,7 @@ export class GameScene extends Phaser.Scene {
     this.generateLavaPools();
     this.generatePortal();
     this.drawArenaBackground();
+    this.laserGraphics = this.add.graphics().setDepth(4);
 
     this.player = new Player(this, this.scale.width / 2, this.scale.height / 2);
     this.enemyGroup = this.physics.add.group();
@@ -86,6 +92,7 @@ export class GameScene extends Phaser.Scene {
     this.scheduleNextShieldSpawn();
     this.scheduleNextBurstSpawn();
     this.scheduleNextMinigunSpawn();
+    this.scheduleNextLaserSpawn();
     this.createHud();
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -136,7 +143,9 @@ export class GameScene extends Phaser.Scene {
     this.updateShieldPickup();
     this.updateBurstPickup();
     this.updateMinigunPickup();
+    this.updateLaserPickup();
     this.updateDonutPickup();
+    this.updateLaserWeapon();
     this.updateHud();
 
     if (this.input.activePointer.isDown) {
@@ -457,6 +466,35 @@ export class GameScene extends Phaser.Scene {
     this.scheduleNextMinigunSpawn();
   }
 
+  private updateLaserPickup(): void {
+    if (!this.laserPickup && this.time.now >= this.nextLaserSpawnAt) {
+      this.spawnLaserPickup();
+    }
+
+    if (this.laserPickup && this.time.now >= this.laserExpiresAt) {
+      this.removeLaserPickup();
+      this.scheduleNextLaserSpawn();
+      return;
+    }
+
+    if (!this.laserPickup) {
+      return;
+    }
+
+    const pickedUp = Phaser.Geom.Intersects.RectangleToRectangle(
+      this.player.sprite.getBounds(),
+      this.laserPickup.getBounds(),
+    );
+
+    if (!pickedUp) {
+      return;
+    }
+
+    this.player.grantLaser(this.time.now);
+    this.removeLaserPickup();
+    this.scheduleNextLaserSpawn();
+  }
+
   private spawnBurstPickup(): void {
     const point = this.findSafeOpenPoint(PICKUP_CONFIG.shieldPadding);
     if (!point) {
@@ -527,6 +565,39 @@ export class GameScene extends Phaser.Scene {
     this.minigunPickup?.destroy();
     this.minigunPickup = undefined;
     this.minigunExpiresAt = 0;
+  }
+
+  private spawnLaserPickup(): void {
+    const point = this.findSafeOpenPoint(PICKUP_CONFIG.shieldPadding);
+    if (!point) {
+      this.nextLaserSpawnAt = this.time.now + 1000;
+      return;
+    }
+
+    const { x, y } = point;
+    const tooCloseToPlayer =
+      Phaser.Math.Distance.Between(x, y, this.player.sprite.x, this.player.sprite.y) <
+      PLAYER_CONFIG.size * 3;
+
+    if (tooCloseToPlayer) {
+      this.nextLaserSpawnAt = this.time.now + 1000;
+      return;
+    }
+
+    this.laserPickup = this.add.image(x, y, 'laserPickup').setDepth(3);
+    this.laserExpiresAt = this.time.now + PICKUP_CONFIG.laserLifetimeMs;
+  }
+
+  private scheduleNextLaserSpawn(): void {
+    this.nextLaserSpawnAt =
+      this.time.now +
+      Phaser.Math.Between(PICKUP_CONFIG.laserSpawnMinMs, PICKUP_CONFIG.laserSpawnMaxMs);
+  }
+
+  private removeLaserPickup(): void {
+    this.laserPickup?.destroy();
+    this.laserPickup = undefined;
+    this.laserExpiresAt = 0;
   }
 
   private trySpawnDonutForWave(wave: number): void {
@@ -635,6 +706,54 @@ export class GameScene extends Phaser.Scene {
     const spawnY = this.player.sprite.y + direction.y * spawnDistance;
     const bullet = new Bullet(this, spawnX, spawnY, direction, this.time.now);
     this.bullets.push(bullet);
+  }
+
+  private updateLaserWeapon(): void {
+    this.laserGraphics.clear();
+
+    if (!this.player.hasLaser(this.time.now)) {
+      return;
+    }
+
+    const angle = this.player.sprite.rotation - Math.PI / 2;
+    const startDistance = PLAYER_CONFIG.size * 0.7;
+    const startX = this.player.sprite.x + Math.cos(angle) * startDistance;
+    const startY = this.player.sprite.y + Math.sin(angle) * startDistance;
+    const endX = startX + Math.cos(angle) * PICKUP_CONFIG.laserLength;
+    const endY = startY + Math.sin(angle) * PICKUP_CONFIG.laserLength;
+    const line = new Phaser.Geom.Line(startX, startY, endX, endY);
+
+    this.laserGraphics.lineStyle(PICKUP_CONFIG.laserWidth * 1.9, COLORS.laserGlow, 0.28);
+    this.laserGraphics.strokeLineShape(line);
+    this.laserGraphics.lineStyle(PICKUP_CONFIG.laserWidth, COLORS.laserGlow, 0.9);
+    this.laserGraphics.strokeLineShape(line);
+    this.laserGraphics.lineStyle(Math.max(3, PICKUP_CONFIG.laserWidth * 0.34), COLORS.laserCore, 1);
+    this.laserGraphics.strokeLineShape(line);
+
+    if (this.time.now - this.lastLaserTickAt < PICKUP_CONFIG.laserTickMs) {
+      return;
+    }
+
+    this.lastLaserTickAt = this.time.now;
+
+    for (let i = this.enemies.length - 1; i >= 0; i -= 1) {
+      const enemy = this.enemies[i];
+      const hit = this.isPointNearLine(
+        enemy.sprite.x,
+        enemy.sprite.y,
+        line,
+        Math.max(PICKUP_CONFIG.laserWidth * 0.5, ENEMY_CONFIG.size * 0.6),
+      );
+
+      if (!hit) {
+        continue;
+      }
+
+      const destroyed = enemy.takeHit();
+      if (destroyed) {
+        this.destroyEnemyAt(i);
+      }
+    }
   }
 
   private updateBullets(): void {
@@ -851,6 +970,7 @@ export class GameScene extends Phaser.Scene {
       { label: 'Shield', texture: 'shieldPickup', scale: 0.9 },
       { label: 'Burst', texture: 'burstPickup', scale: 0.88 },
       { label: 'Minigun', texture: 'minigunPickup', scale: 0.88 },
+      { label: 'Laser', texture: 'laserPickup', scale: 0.88 },
       { label: 'Donut', texture: 'donutPickup', scale: 0.86 },
       { label: 'Lava', texture: 'lavaLegendIcon', scale: 0.9 },
       { label: 'Portal', texture: 'portalLegendIcon', scale: 0.9 },
@@ -914,7 +1034,9 @@ export class GameScene extends Phaser.Scene {
 
     this.healthText.setText(`Health: ${this.player.getHealth()}/${PLAYER_CONFIG.maxHealth}`);
     this.shieldText.setText(`Shield: ${this.player.hasShield() ? 'READY' : 'NONE'}`);
-    const weaponLabel = this.player.hasMinigun(this.time.now)
+    const weaponLabel = this.player.hasLaser(this.time.now)
+      ? 'LASER'
+      : this.player.hasMinigun(this.time.now)
       ? 'MINIGUN'
       : this.player.hasBurstShot(this.time.now)
         ? 'BURST'
@@ -1090,6 +1212,19 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
+  private isPointNearLine(
+    x: number,
+    y: number,
+    line: Phaser.Geom.Line,
+    radius: number,
+  ): boolean {
+    const distance = Phaser.Math.Distance.BetweenPoints(
+      { x, y },
+      Phaser.Geom.Line.GetNearestPoint(line, { x, y }),
+    );
+    return distance <= radius;
+  }
+
   private openPauseMenu(): void {
     if (this.isPaused) {
       return;
@@ -1196,6 +1331,16 @@ export class GameScene extends Phaser.Scene {
     g.generateTexture('minigunPickup', PICKUP_CONFIG.minigunSize, PICKUP_CONFIG.minigunSize);
 
     g.clear();
+    g.fillStyle(COLORS.laserGlow, 1);
+    g.fillCircle(PICKUP_CONFIG.laserSize / 2, PICKUP_CONFIG.laserSize / 2, PICKUP_CONFIG.laserSize / 2 - 2);
+    g.lineStyle(4, COLORS.laserCore, 1);
+    g.beginPath();
+    g.moveTo(6, PICKUP_CONFIG.laserSize - 6);
+    g.lineTo(PICKUP_CONFIG.laserSize - 6, 6);
+    g.strokePath();
+    g.generateTexture('laserPickup', PICKUP_CONFIG.laserSize, PICKUP_CONFIG.laserSize);
+
+    g.clear();
     g.fillStyle(COLORS.donut, 1);
     g.fillCircle(
       PICKUP_CONFIG.healthSize / 2,
@@ -1225,7 +1370,6 @@ export class GameScene extends Phaser.Scene {
     g.fillCircle(12, 12, 4);
     g.generateTexture('lavaLegendIcon', 24, 24);
 
-    g.clear();
     g.fillStyle(COLORS.portalOuter, 1);
     g.fillCircle(12, 12, 11);
     g.fillStyle(COLORS.portalMid, 1);
@@ -1250,7 +1394,9 @@ export class GameScene extends Phaser.Scene {
     this.removeShieldPickup();
     this.removeBurstPickup();
     this.removeMinigunPickup();
+    this.removeLaserPickup();
     this.removeDonutPickup();
+    this.laserGraphics.clear();
   }
 
   private destroyEnemyAt(index: number): void {
