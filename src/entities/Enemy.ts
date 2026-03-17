@@ -4,6 +4,7 @@ import { ENEMY_CONFIG } from '../config/constants';
 export class Enemy {
   readonly sprite: Phaser.Physics.Arcade.Image;
   readonly isSpecial: boolean;
+  readonly isBoss: boolean;
   readonly isArmored: boolean;
   readonly isBlitz: boolean;
   readonly isBurst: boolean;
@@ -18,20 +19,28 @@ export class Enemy {
     x: number,
     y: number,
     isSpecial = false,
+    isBoss = false,
     isArmored = false,
     isBlitz = false,
     isBurst = false,
   ) {
     this.sprite = scene.physics.add.image(x, y, 'enemy');
     this.isSpecial = isSpecial;
+    this.isBoss = isBoss;
     this.isArmored = isArmored;
     this.isBlitz = isBlitz;
     this.isBurst = isBurst;
-    this.hitsRemaining = this.isArmored ? 2 : 1;
-    this.sprite.setCircle(ENEMY_CONFIG.size / 2 - 1);
+    this.hitsRemaining = this.isBoss ? ENEMY_CONFIG.bossHits : this.isArmored ? 2 : 1;
+    const radiusScale = this.isBoss ? ENEMY_CONFIG.bossSizeScale : 1;
+    this.sprite.setCircle((ENEMY_CONFIG.size * radiusScale) / 2 - 1);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setBounce(ENEMY_CONFIG.bounceFactor, ENEMY_CONFIG.bounceFactor);
     body.setCollideWorldBounds(true);
+    if (this.isBoss) {
+      this.sprite.setTint(ENEMY_CONFIG.bossTint);
+      this.sprite.setScale(ENEMY_CONFIG.bossSizeScale);
+    }
+
     if (this.isSpecial) {
       this.sprite.setTint(ENEMY_CONFIG.specialTint);
       this.sprite.setScale(1.16);
@@ -52,7 +61,7 @@ export class Enemy {
       this.sprite.setScale(1.18);
     }
 
-    if (this.isSpecial || this.isArmored || this.isBlitz || this.isBurst) {
+    if (this.isBoss || this.isSpecial || this.isArmored || this.isBlitz || this.isBurst) {
       this.nextShotAtMs = scene.time.now + Phaser.Math.Between(500, 900);
     }
     this.strafeDirection = Math.random() < 0.5 ? -1 : 1;
@@ -152,7 +161,11 @@ export class Enemy {
 
     desiredDirection.normalize();
 
-    const baseSpeedMultiplier = this.isBlitz ? ENEMY_CONFIG.blitzSpeedMultiplier : 1;
+    const baseSpeedMultiplier = this.isBoss
+      ? ENEMY_CONFIG.bossSpeedMultiplier
+      : this.isBlitz
+      ? ENEMY_CONFIG.blitzSpeedMultiplier
+      : 1;
     const speedMultiplier =
       (isChargeWindow ? 1.12 : distance > 320 ? 1.08 : 1) * baseSpeedMultiplier;
     const desiredVelocity = desiredDirection.scale(ENEMY_CONFIG.speed * speedMultiplier);
@@ -177,7 +190,10 @@ export class Enemy {
   }
 
   canShoot(nowMs: number): boolean {
-    return (this.isSpecial || this.isArmored || this.isBlitz || this.isBurst) && nowMs >= this.nextShotAtMs;
+    return (
+      (this.isBoss || this.isSpecial || this.isArmored || this.isBlitz || this.isBurst) &&
+      nowMs >= this.nextShotAtMs
+    );
   }
 
   takeHit(): boolean {
@@ -200,6 +216,14 @@ export class Enemy {
   }
 
   scheduleNextShot(nowMs: number): void {
+    if (this.isBoss) {
+      this.nextShotAtMs =
+        nowMs +
+        ENEMY_CONFIG.bossShotCooldownMs +
+        Phaser.Math.Between(-180, 180);
+      return;
+    }
+
     if (this.isBlitz) {
       this.nextShotAtMs =
         nowMs +

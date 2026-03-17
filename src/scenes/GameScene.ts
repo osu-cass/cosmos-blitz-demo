@@ -46,6 +46,7 @@ export class GameScene extends Phaser.Scene {
   private spawnIntervalMs = 550;
   private lastShotAtMs = 0;
   private specialEnemyWave = 0;
+  private bossEnemyWave = 0;
   private blitzEnemyWave = 0;
   private burstEnemyWave = 0;
   private observedWave = 0;
@@ -96,6 +97,7 @@ export class GameScene extends Phaser.Scene {
     this.waveManager.startFirstWave();
     this.observedWave = this.waveManager.getState().currentWave;
     this.specialEnemyWave = this.observedWave - 1;
+    this.bossEnemyWave = this.observedWave - 1;
     this.blitzEnemyWave = this.observedWave - 1;
     this.burstEnemyWave = this.observedWave - 1;
     this.refreshArenaHazards();
@@ -740,24 +742,34 @@ export class GameScene extends Phaser.Scene {
   private spawnEnemyAtEdge(): void {
     const point = this.waveManager.getSpawnPosition(this.scale.width, this.scale.height);
     const currentWave = this.waveManager.getState().currentWave;
+    const shouldSpawnBoss =
+      currentWave % ENEMY_CONFIG.bossEveryNWaves === 0 && this.bossEnemyWave !== currentWave;
     const shouldSpawnSpecial =
-      currentWave >= ENEMY_CONFIG.specialMinWave && this.specialEnemyWave !== currentWave;
+      !shouldSpawnBoss &&
+      currentWave >= ENEMY_CONFIG.specialMinWave &&
+      this.specialEnemyWave !== currentWave;
     const shouldSpawnBlitz =
+      !shouldSpawnBoss &&
       currentWave > 1 &&
       this.blitzEnemyWave !== currentWave &&
       Math.random() < ENEMY_CONFIG.blitzSpawnChance;
     const shouldSpawnBurst =
+      !shouldSpawnBoss &&
       currentWave > 2 &&
       !shouldSpawnBlitz &&
       this.burstEnemyWave !== currentWave &&
       Math.random() < ENEMY_CONFIG.burstSpawnChance;
     const shouldSpawnArmored =
-      !shouldSpawnBlitz && !shouldSpawnBurst && Math.random() < ENEMY_CONFIG.armoredSpawnChance;
+      !shouldSpawnBoss &&
+      !shouldSpawnBlitz &&
+      !shouldSpawnBurst &&
+      Math.random() < ENEMY_CONFIG.armoredSpawnChance;
     const enemy = new Enemy(
       this,
       point.x,
       point.y,
       shouldSpawnSpecial,
+      shouldSpawnBoss,
       shouldSpawnArmored,
       shouldSpawnBlitz,
       shouldSpawnBurst,
@@ -765,6 +777,9 @@ export class GameScene extends Phaser.Scene {
     this.enemies.push(enemy);
     this.enemyGroup.add(enemy.sprite);
     this.waveManager.onEnemySpawned();
+    if (shouldSpawnBoss) {
+      this.bossEnemyWave = currentWave;
+    }
     if (shouldSpawnSpecial) {
       this.specialEnemyWave = currentWave;
     }
@@ -936,7 +951,8 @@ export class GameScene extends Phaser.Scene {
     );
     const distanceSq = toPlayer.lengthSq();
 
-    if (distanceSq > ENEMY_CONFIG.specialShotRange * ENEMY_CONFIG.specialShotRange) {
+    const shotRange = enemy.isBoss ? ENEMY_CONFIG.bossShotRange : ENEMY_CONFIG.specialShotRange;
+    if (distanceSq > shotRange * shotRange) {
       return;
     }
 
@@ -946,10 +962,40 @@ export class GameScene extends Phaser.Scene {
     }
 
     toPlayer.normalize();
-    const spawnDistance =
-      (ENEMY_CONFIG.size * (enemy.isSpecial || enemy.isBlitz ? 0.7 : 0.5)) + BULLET_CONFIG.size;
+    const enemyScale = enemy.isBoss
+      ? ENEMY_CONFIG.bossSizeScale
+      : enemy.isBlitz
+      ? ENEMY_CONFIG.blitzSizeScale
+      : enemy.isBurst
+      ? 1.18
+      : enemy.isArmored
+      ? 1.12
+      : enemy.isSpecial
+      ? 1.16
+      : 1;
+    const spawnDistance = (ENEMY_CONFIG.size * enemyScale * 0.5) + BULLET_CONFIG.size;
 
-    if (enemy.isBlitz) {
+    if (enemy.isBoss) {
+      const centerIndex = Math.floor(ENEMY_CONFIG.bossShotCount / 2);
+
+      for (let i = 0; i < ENEMY_CONFIG.bossShotCount; i += 1) {
+        const spreadOffset = (i - centerIndex) * ENEMY_CONFIG.bossShotSpreadRadians;
+        const direction = toPlayer.clone().rotate(spreadOffset);
+        const bullet = new Bullet(
+          this,
+          enemy.sprite.x + direction.x * spawnDistance,
+          enemy.sprite.y + direction.y * spawnDistance,
+          direction,
+          this.time.now,
+          'enemyBullet',
+          BULLET_CONFIG.bossEnemySpeed,
+          BULLET_CONFIG.enemyMaxLifetimeMs,
+          BULLET_CONFIG.bossEnemyDamage,
+        );
+        bullet.sprite.setScale(1.25);
+        this.enemyBullets.push(bullet);
+      }
+    } else if (enemy.isBlitz) {
       const centerIndex = Math.floor(ENEMY_CONFIG.blitzShotCount / 2);
 
       for (let i = 0; i < ENEMY_CONFIG.blitzShotCount; i += 1) {
@@ -1099,6 +1145,7 @@ export class GameScene extends Phaser.Scene {
       { label: 'You', texture: 'player', scale: 0.78 },
       { label: 'Red enemy', texture: 'enemy', scale: 0.78 },
       { label: 'Orange shooter', texture: 'enemy', tint: ENEMY_CONFIG.specialTint, scale: 0.86 },
+      { label: 'Boss', texture: 'enemy', tint: ENEMY_CONFIG.bossTint, scale: 1.45 },
       { label: 'Purple armored', texture: 'enemy', tint: ENEMY_CONFIG.armoredTint, scale: 0.84 },
       { label: 'Cyan blitz', texture: 'enemy', tint: ENEMY_CONFIG.blitzTint, scale: 1 },
       { label: 'Pink burst', texture: 'enemy', tint: ENEMY_CONFIG.burstTint, scale: 0.9 },
@@ -1648,6 +1695,17 @@ export class GameScene extends Phaser.Scene {
       Math.floor(PLAYER_CONFIG.size * 0.35),
     );
     g.generateTexture('player', PLAYER_CONFIG.size, PLAYER_CONFIG.size);
+
+    g.clear();
+    g.fillStyle(0x1b2630, 1);
+    g.fillRect(2, 6, 9, 4);
+    g.fillRect(4, 10, 3, 3);
+    g.fillStyle(0x607280, 1);
+    g.fillRect(10, 7, 8, 2);
+    g.fillRect(14, 6, 2, 4);
+    g.fillStyle(0xcfe8f7, 1);
+    g.fillRect(1, 7, 1, 2);
+    g.generateTexture('normalWeapon', 20, 16);
 
     g.clear();
     g.fillStyle(COLORS.enemy, 1);

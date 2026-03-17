@@ -10,6 +10,7 @@ export type LuckyPowerupType = 'speed' | 'spread' | 'shield';
 
 export class Player {
   readonly sprite: Phaser.Physics.Arcade.Image;
+  readonly weaponSprite: Phaser.GameObjects.Image;
   private readonly keyboard: {
     up: Phaser.Input.Keyboard.Key;
     down: Phaser.Input.Keyboard.Key;
@@ -33,6 +34,7 @@ export class Player {
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.sprite = scene.physics.add.image(x, y, 'player');
+    this.weaponSprite = scene.add.image(x, y, 'normalWeapon').setDepth(5);
     this.sprite.setScale(1.2);
     this.sprite.setCircle(PLAYER_CONFIG.size / 2 - 1);
     this.sprite.setDrag(1300, 1300);
@@ -51,6 +53,7 @@ export class Player {
     }) as Player['keyboard'];
 
     this.health = PLAYER_CONFIG.maxHealth;
+    this.syncWeaponSprite();
   }
 
   update(sceneTimeMs: number): void {
@@ -68,11 +71,15 @@ export class Player {
     } else {
       this.sprite.setVelocity(0, 0);
     }
+
+    this.syncWeaponSprite();
   }
 
   aimToward(targetX: number, targetY: number): void {
     const angle = Phaser.Math.Angle.Between(this.sprite.x, this.sprite.y, targetX, targetY);
     this.sprite.rotation = angle + Math.PI / 2;
+    this.weaponSprite.rotation = angle;
+    this.syncWeaponSprite();
   }
 
   getHealth(): number {
@@ -263,5 +270,14 @@ export class Player {
       this.shieldExpiresAt = 0;
       this.sprite.clearTint();
     }
+  }
+
+  private syncWeaponSprite(): void {
+    const offset = PLAYER_CONFIG.size * 0.52;
+    const angle = this.sprite.rotation - Math.PI / 2;
+    this.weaponSprite.setPosition(
+      this.sprite.x + Math.cos(angle) * offset,
+      this.sprite.y + Math.sin(angle) * offset,
+    );
   }
 }
