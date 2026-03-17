@@ -84,6 +84,9 @@ export const HAZARD_CONFIG = {
   pickupSafeRadius: 96,
   damage: 8,
   damageIntervalMs: 700,
+  portalRadius: 24,
+  portalPadding: 88,
+  portalTeleportCooldownMs: 700,
 };
 
 export const WAVE_CONFIG = {
@@ -106,6 +109,9 @@ export const COLORS = {
   lavaOuter: 0x702100,
   lavaMid: 0xd9480f,
   lavaInner: 0xffb347,
+  portalOuter: 0x16081f,
+  portalMid: 0x47206b,
+  portalInner: 0x7ef9ff,
   uiText: '#ffffff',
   uiShadow: '#000000',
 };

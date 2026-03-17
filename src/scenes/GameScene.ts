@@ -14,6 +14,7 @@ import { WaveManager } from '../systems/WaveManager';
 
 export class GameScene extends Phaser.Scene {
   private lavaPools: { x: number; y: number; radius: number }[] = [];
+  private portal?: { x: number; y: number; radius: number };
   private backgroundGraphics!: Phaser.GameObjects.Graphics;
   private player!: Player;
   private enemyGroup!: Phaser.Physics.Arcade.Group;
@@ -48,6 +49,7 @@ export class GameScene extends Phaser.Scene {
   private minigunExpiresAt = 0;
   private donutExpiresAt = 0;
   private lastLavaDamageAt = 0;
+  private lastPortalTeleportAt = 0;
   private gameOver = false;
   private isPaused = false;
 
@@ -62,6 +64,7 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
     this.generateLavaPools();
+    this.generatePortal();
     this.drawArenaBackground();
 
     this.player = new Player(this, this.scale.width / 2, this.scale.height / 2);
@@ -129,6 +132,7 @@ export class GameScene extends Phaser.Scene {
     this.updateEnemyBullets();
     this.handleSpawning(delta);
     this.updateLavaHazards();
+    this.updatePortal();
     this.updateShieldPickup();
     this.updateBurstPickup();
     this.updateMinigunPickup();
@@ -185,6 +189,34 @@ export class GameScene extends Phaser.Scene {
         this.setGameOver();
       }
     }
+  }
+
+  private updatePortal(): void {
+    if (!this.portal || this.time.now - this.lastPortalTeleportAt < HAZARD_CONFIG.portalTeleportCooldownMs) {
+      return;
+    }
+
+    const playerInPortal =
+      Phaser.Math.Distance.Between(
+        this.player.sprite.x,
+        this.player.sprite.y,
+        this.portal.x,
+        this.portal.y,
+      ) <=
+      this.portal.radius + PLAYER_CONFIG.size * 0.35;
+
+    if (!playerInPortal) {
+      return;
+    }
+
+    const destination = this.findSafeOpenPoint(HAZARD_CONFIG.portalPadding, this.portal.radius + 40);
+    if (!destination) {
+      return;
+    }
+
+    this.lastPortalTeleportAt = this.time.now;
+    this.player.sprite.setPosition(destination.x, destination.y);
+    this.player.sprite.setVelocity(0, 0);
   }
 
   private updateEnemies(): void {
@@ -821,6 +853,7 @@ export class GameScene extends Phaser.Scene {
       { label: 'Minigun', texture: 'minigunPickup', scale: 0.88 },
       { label: 'Donut', texture: 'donutPickup', scale: 0.86 },
       { label: 'Lava', texture: 'lavaLegendIcon', scale: 0.9 },
+      { label: 'Portal', texture: 'portalLegendIcon', scale: 0.9 },
     ];
     const panelWidth = 320;
     const rowHeight = 30;
@@ -925,11 +958,21 @@ export class GameScene extends Phaser.Scene {
       bg.fillStyle(COLORS.lavaInner, 0.95);
       bg.fillCircle(pool.x, pool.y, pool.radius * 0.38);
     }
+
+    if (this.portal) {
+      bg.fillStyle(COLORS.portalOuter, 0.95);
+      bg.fillCircle(this.portal.x, this.portal.y, this.portal.radius);
+      bg.fillStyle(COLORS.portalMid, 0.95);
+      bg.fillCircle(this.portal.x, this.portal.y, this.portal.radius * 0.72);
+      bg.fillStyle(COLORS.portalInner, 0.95);
+      bg.fillCircle(this.portal.x, this.portal.y, this.portal.radius * 0.2);
+    }
   }
 
   private onResize(width: number, height: number): void {
     this.physics.world.setBounds(0, 0, width, height);
     this.generateLavaPools();
+    this.generatePortal();
     this.drawArenaBackground();
     this.gameOverText.setPosition(width / 2, height / 2);
     this.positionLegend();
@@ -988,12 +1031,49 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private findSafeOpenPoint(padding: number): { x: number; y: number } | undefined {
+  private generatePortal(): void {
+    this.portal = undefined;
+
+    for (let attempt = 0; attempt < 80; attempt += 1) {
+      const radius = HAZARD_CONFIG.portalRadius;
+      const x = Phaser.Math.Between(
+        HAZARD_CONFIG.portalPadding + radius,
+        this.scale.width - HAZARD_CONFIG.portalPadding - radius,
+      );
+      const y = Phaser.Math.Between(
+        HAZARD_CONFIG.portalPadding + radius,
+        this.scale.height - HAZARD_CONFIG.portalPadding - radius,
+      );
+
+      const tooCloseToSpawn =
+        Phaser.Math.Distance.Between(x, y, this.scale.width / 2, this.scale.height / 2) <
+        radius + HAZARD_CONFIG.playerSpawnSafeRadius;
+      if (tooCloseToSpawn || this.isPointInLava(x, y, radius + 18)) {
+        continue;
+      }
+
+      this.portal = { x, y, radius };
+      return;
+    }
+  }
+
+  private findSafeOpenPoint(
+    padding: number,
+    portalBuffer = 0,
+  ): { x: number; y: number } | undefined {
     for (let attempt = 0; attempt < 40; attempt += 1) {
       const x = Phaser.Math.Between(padding, this.scale.width - padding);
       const y = Phaser.Math.Between(padding, this.scale.height - padding);
 
       if (this.isPointInLava(x, y, HAZARD_CONFIG.pickupSafeRadius)) {
+        continue;
+      }
+
+       if (
+        this.portal &&
+        Phaser.Math.Distance.Between(x, y, this.portal.x, this.portal.y) <=
+          this.portal.radius + portalBuffer
+      ) {
         continue;
       }
 
@@ -1144,6 +1224,15 @@ export class GameScene extends Phaser.Scene {
     g.fillStyle(COLORS.lavaInner, 1);
     g.fillCircle(12, 12, 4);
     g.generateTexture('lavaLegendIcon', 24, 24);
+
+    g.clear();
+    g.fillStyle(COLORS.portalOuter, 1);
+    g.fillCircle(12, 12, 11);
+    g.fillStyle(COLORS.portalMid, 1);
+    g.fillCircle(12, 12, 8);
+    g.fillStyle(COLORS.portalInner, 1);
+    g.fillCircle(12, 12, 3);
+    g.generateTexture('portalLegendIcon', 24, 24);
 
     g.destroy();
   }
