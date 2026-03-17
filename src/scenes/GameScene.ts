@@ -10,6 +10,7 @@ import {
 import { Bullet } from '../entities/Bullet';
 import { Enemy } from '../entities/Enemy';
 import { Player } from '../entities/Player';
+import type { LuckyPowerupType } from '../entities/Player';
 import { WaveManager } from '../systems/WaveManager';
 
 export class GameScene extends Phaser.Scene {
@@ -35,6 +36,7 @@ export class GameScene extends Phaser.Scene {
   private healthText!: Phaser.GameObjects.Text;
   private shieldText!: Phaser.GameObjects.Text;
   private weaponText!: Phaser.GameObjects.Text;
+  private bonusText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private remainingText!: Phaser.GameObjects.Text;
   private legendContainer!: Phaser.GameObjects.Container;
@@ -141,7 +143,7 @@ export class GameScene extends Phaser.Scene {
 
     const pointer = this.input.activePointer;
     this.player.aimToward(pointer.worldX, pointer.worldY);
-    this.player.update();
+    this.player.update(this.time.now);
     this.updateEnemies();
     this.updateBullets();
     this.updateEnemyBullets();
@@ -799,6 +801,13 @@ export class GameScene extends Phaser.Scene {
         PICKUP_CONFIG.minigunSpreadRadians,
       );
       this.spawnPlayerBullet(direction.rotate(spread));
+    } else if (this.player.hasLuckySpread(this.time.now)) {
+      const centerIndex = Math.floor(PICKUP_CONFIG.luckySpreadShotsPerTap / 2);
+
+      for (let i = 0; i < PICKUP_CONFIG.luckySpreadShotsPerTap; i += 1) {
+        const spreadOffset = (i - centerIndex) * PICKUP_CONFIG.luckySpreadRadians;
+        this.spawnPlayerBullet(direction.clone().rotate(spreadOffset));
+      }
     } else if (this.player.hasBurstShot(this.time.now)) {
       const centerIndex = Math.floor(PICKUP_CONFIG.burstShotsPerTap / 2);
 
@@ -864,6 +873,7 @@ export class GameScene extends Phaser.Scene {
       }
 
       const destroyed = enemy.takeHit();
+      this.tryTriggerLuckyPowerup();
       if (destroyed) {
         this.destroyEnemyAt(i);
       }
@@ -903,6 +913,7 @@ export class GameScene extends Phaser.Scene {
           this.bullets.splice(i, 1);
 
           const destroyed = enemy.takeHit();
+          this.tryTriggerLuckyPowerup();
           if (destroyed) {
             this.destroyEnemyAt(j);
           }
@@ -1049,8 +1060,9 @@ export class GameScene extends Phaser.Scene {
     this.healthText = this.add.text(16, 12, '', style).setDepth(10);
     this.shieldText = this.add.text(16, 44, '', style).setDepth(10);
     this.weaponText = this.add.text(16, 76, '', style).setDepth(10);
-    this.waveText = this.add.text(16, 108, '', style).setDepth(10);
-    this.remainingText = this.add.text(16, 140, '', style).setDepth(10);
+    this.bonusText = this.add.text(16, 108, '', style).setDepth(10);
+    this.waveText = this.add.text(16, 140, '', style).setDepth(10);
+    this.remainingText = this.add.text(16, 172, '', style).setDepth(10);
 
     this.add
       .text(this.scale.width - 16, 12, 'ESC to Pause', {
@@ -1163,6 +1175,7 @@ export class GameScene extends Phaser.Scene {
         ? 'BURST'
         : 'NORMAL';
     this.weaponText.setText(`Weapon: ${weaponLabel}`);
+    this.bonusText.setText(`Bonus: ${this.getLuckyPowerupLabel()}`);
     this.waveText.setText(`Wave: ${waveState.currentWave}`);
 
     if (waveState.inBreak) {
@@ -1233,6 +1246,24 @@ export class GameScene extends Phaser.Scene {
     this.refreshArenaHazards();
     this.gameOverText.setPosition(width / 2, height / 2);
     this.positionLegend();
+  }
+
+  private getLuckyPowerupLabel(): string {
+    const powerup = this.player.getActiveLuckyPowerup(this.time.now);
+
+    if (powerup === 'speed') {
+      return '2X SPEED';
+    }
+
+    if (powerup === 'spread') {
+      return 'SPREAD';
+    }
+
+    if (powerup === 'shield') {
+      return 'LUCKY SHIELD';
+    }
+
+    return 'NONE';
   }
 
   private areArenaHazardsUnlocked(): boolean {
@@ -1463,6 +1494,59 @@ export class GameScene extends Phaser.Scene {
       Phaser.Geom.Line.GetNearestPoint(line, { x, y }),
     );
     return distance <= radius;
+  }
+
+  private tryTriggerLuckyPowerup(): void {
+    if (Math.random() >= PLAYER_CONFIG.luckyPowerupChance) {
+      return;
+    }
+
+    const durationMs = PLAYER_CONFIG.luckyPowerupDurationMs;
+    const powerup = Phaser.Utils.Array.GetRandom<LuckyPowerupType | 'teleport'>([
+      'speed',
+      'spread',
+      'shield',
+      'teleport',
+    ]);
+
+    if (powerup === 'speed') {
+      this.player.grantLuckySpeed(this.time.now, durationMs);
+      return;
+    }
+
+    if (powerup === 'spread') {
+      this.player.grantLuckySpread(this.time.now, durationMs);
+      return;
+    }
+
+    if (powerup === 'shield') {
+      this.player.grantTimedShield(this.time.now, durationMs);
+      return;
+    }
+
+    this.triggerLuckyTeleport();
+  }
+
+  private triggerLuckyTeleport(): void {
+    const destination = this.findSafeOpenPoint(72, 48);
+    if (!destination) {
+      return;
+    }
+
+    this.player.sprite.setPosition(destination.x, destination.y);
+    this.player.sprite.setVelocity(0, 0);
+    this.player.sprite.setTintFill(0xe1fbff);
+    this.time.delayedCall(90, () => {
+      if (!this.player.sprite.active) {
+        return;
+      }
+
+      if (this.player.hasShield()) {
+        this.player.sprite.setTint(0x9be7ff);
+      } else {
+        this.player.sprite.clearTint();
+      }
+    });
   }
 
   private openPauseMenu(): void {

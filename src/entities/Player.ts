@@ -6,6 +6,8 @@ type MovementInput = {
   y: number;
 };
 
+export type LuckyPowerupType = 'speed' | 'spread' | 'shield';
+
 export class Player {
   readonly sprite: Phaser.Physics.Arcade.Image;
   private readonly keyboard: {
@@ -21,9 +23,12 @@ export class Player {
 
   private health: number;
   private shieldHits = 0;
+  private shieldExpiresAt = 0;
   private burstActiveUntil = 0;
   private minigunActiveUntil = 0;
   private laserActiveUntil = 0;
+  private speedBoostUntil = 0;
+  private luckySpreadUntil = 0;
   private invulnerableUntil = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
@@ -48,12 +53,17 @@ export class Player {
     this.health = PLAYER_CONFIG.maxHealth;
   }
 
-  update(): void {
+  update(sceneTimeMs: number): void {
+    this.syncTimedEffects(sceneTimeMs);
+
     const input = this.readMovementInput();
+    const moveSpeed =
+      PLAYER_CONFIG.speed *
+      (sceneTimeMs < this.speedBoostUntil ? PLAYER_CONFIG.luckySpeedMultiplier : 1);
 
     const velocity = new Phaser.Math.Vector2(input.x, input.y);
     if (velocity.lengthSq() > 0) {
-      velocity.normalize().scale(PLAYER_CONFIG.speed);
+      velocity.normalize().scale(moveSpeed);
       this.sprite.setVelocity(velocity.x, velocity.y);
     } else {
       this.sprite.setVelocity(0, 0);
@@ -77,6 +87,14 @@ export class Player {
     return this.shieldHits > 0;
   }
 
+  hasLuckySpread(sceneTimeMs: number): boolean {
+    return sceneTimeMs < this.luckySpreadUntil;
+  }
+
+  hasSpeedBoost(sceneTimeMs: number): boolean {
+    return sceneTimeMs < this.speedBoostUntil;
+  }
+
   hasBurstShot(sceneTimeMs: number): boolean {
     return sceneTimeMs < this.burstActiveUntil;
   }
@@ -91,6 +109,14 @@ export class Player {
 
   grantShield(): void {
     this.shieldHits = PICKUP_CONFIG.shieldAbsorbHits;
+    this.shieldExpiresAt = 0;
+    this.sprite.setTint(0x9be7ff);
+  }
+
+  grantTimedShield(sceneTimeMs: number, durationMs: number): void {
+    this.clearLuckyPowerups();
+    this.shieldHits = 1;
+    this.shieldExpiresAt = sceneTimeMs + durationMs;
     this.sprite.setTint(0x9be7ff);
   }
 
@@ -104,6 +130,32 @@ export class Player {
 
   grantLaser(sceneTimeMs: number): void {
     this.laserActiveUntil = sceneTimeMs + PICKUP_CONFIG.laserDurationMs;
+  }
+
+  grantLuckySpeed(sceneTimeMs: number, durationMs: number): void {
+    this.clearLuckyPowerups();
+    this.speedBoostUntil = sceneTimeMs + durationMs;
+  }
+
+  grantLuckySpread(sceneTimeMs: number, durationMs: number): void {
+    this.clearLuckyPowerups();
+    this.luckySpreadUntil = sceneTimeMs + durationMs;
+  }
+
+  getActiveLuckyPowerup(sceneTimeMs: number): LuckyPowerupType | undefined {
+    if (sceneTimeMs < this.speedBoostUntil) {
+      return 'speed';
+    }
+
+    if (sceneTimeMs < this.luckySpreadUntil) {
+      return 'spread';
+    }
+
+    if (this.shieldExpiresAt > 0 && sceneTimeMs < this.shieldExpiresAt && this.shieldHits > 0) {
+      return 'shield';
+    }
+
+    return undefined;
   }
 
   heal(amount: number): boolean {
@@ -192,5 +244,24 @@ export class Player {
     }
 
     return { x, y };
+  }
+
+  private clearLuckyPowerups(): void {
+    this.speedBoostUntil = 0;
+    this.luckySpreadUntil = 0;
+
+    if (this.shieldExpiresAt > 0) {
+      this.shieldHits = 0;
+      this.shieldExpiresAt = 0;
+      this.sprite.clearTint();
+    }
+  }
+
+  private syncTimedEffects(sceneTimeMs: number): void {
+    if (this.shieldExpiresAt > 0 && sceneTimeMs >= this.shieldExpiresAt) {
+      this.shieldHits = 0;
+      this.shieldExpiresAt = 0;
+      this.sprite.clearTint();
+    }
   }
 }

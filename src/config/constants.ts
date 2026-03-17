@@ -4,6 +4,9 @@ export const GAME_HEIGHT = 720;
 export const PLAYER_CONFIG = {
   size: 28,
   speed: 260,
+  luckyPowerupChance: 0.1,
+  luckyPowerupDurationMs: 5000,
+  luckySpeedMultiplier: 2,
   maxHealth: 100,
   damageFlashMs: 120,
   damageInvulnerabilityMs: 500,
@@ -68,6 +71,8 @@ export const PICKUP_CONFIG = {
   burstDurationMs: 7000,
   burstShotsPerTap: 3,
   burstSpreadRadians: 0.18,
+  luckySpreadShotsPerTap: 3,
+  luckySpreadRadians: 0.24,
   minigunSize: 24,
   minigunSpawnMinMs: 11000,
   minigunSpawnMaxMs: 18000,
