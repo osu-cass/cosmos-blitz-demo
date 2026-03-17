@@ -14,6 +14,8 @@ import { WaveManager } from '../systems/WaveManager';
 
 export class GameScene extends Phaser.Scene {
   private lavaPools: { x: number; y: number; radius: number }[] = [];
+  private volcanoLavaPools: { x: number; y: number; radius: number; expiresAt: number }[] = [];
+  private volcanoes: { x: number; y: number; targetX: number; targetY: number }[] = [];
   private portal?: { x: number; y: number; radius: number };
   private backgroundGraphics!: Phaser.GameObjects.Graphics;
   private laserGraphics!: Phaser.GameObjects.Graphics;
@@ -58,6 +60,7 @@ export class GameScene extends Phaser.Scene {
   private lastLavaDamageAt = 0;
   private lastLaserTickAt = 0;
   private lastPortalTeleportAt = 0;
+  private nextVolcanoEventAt = 0;
   private gameOver = false;
   private isPaused = false;
 
@@ -143,6 +146,7 @@ export class GameScene extends Phaser.Scene {
     this.updateBullets();
     this.updateEnemyBullets();
     this.handleSpawning(delta);
+    this.updateVolcanoEvent();
     this.updateLavaHazards();
     this.updatePortal();
     this.updateShieldPickup();
@@ -236,6 +240,35 @@ export class GameScene extends Phaser.Scene {
       if (didTakeDamage && !this.player.isAlive()) {
         this.setGameOver();
       }
+    }
+  }
+
+  private updateVolcanoEvent(): void {
+    if (!this.areArenaHazardsUnlocked()) {
+      if (this.volcanoLavaPools.length > 0 || this.volcanoes.length > 0) {
+        this.volcanoLavaPools = [];
+        this.volcanoes = [];
+        this.drawArenaBackground();
+      }
+      return;
+    }
+
+    if (this.nextVolcanoEventAt === 0) {
+      this.scheduleNextVolcanoEvent();
+    }
+
+    const activePoolCount = this.volcanoLavaPools.length;
+    if (activePoolCount > 0) {
+      this.volcanoLavaPools = this.volcanoLavaPools.filter((pool) => pool.expiresAt > this.time.now);
+      if (this.volcanoLavaPools.length === 0) {
+        this.volcanoes = [];
+        this.drawArenaBackground();
+      }
+    }
+
+    if (this.volcanoLavaPools.length === 0 && this.time.now >= this.nextVolcanoEventAt) {
+      this.triggerVolcanoEvent();
+      this.scheduleNextVolcanoEvent();
     }
   }
 
@@ -1160,13 +1193,29 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    for (const pool of this.lavaPools) {
+    for (const pool of this.getAllLavaPools()) {
       bg.fillStyle(COLORS.lavaOuter, 0.95);
       bg.fillCircle(pool.x, pool.y, pool.radius);
       bg.fillStyle(COLORS.lavaMid, 0.95);
       bg.fillCircle(pool.x, pool.y, pool.radius * 0.72);
       bg.fillStyle(COLORS.lavaInner, 0.95);
       bg.fillCircle(pool.x, pool.y, pool.radius * 0.38);
+    }
+
+    for (const volcano of this.volcanoes) {
+      bg.lineStyle(3, COLORS.lavaMid, 0.7);
+      bg.lineBetween(volcano.x, volcano.y, volcano.targetX, volcano.targetY);
+      bg.fillStyle(0x4f2a18, 1);
+      bg.fillTriangle(
+        volcano.x - 14,
+        volcano.y + 12,
+        volcano.x,
+        volcano.y - 18,
+        volcano.x + 14,
+        volcano.y + 12,
+      );
+      bg.fillStyle(COLORS.lavaInner, 1);
+      bg.fillCircle(volcano.x, volcano.y - 8, 4);
     }
 
     if (this.portal) {
@@ -1194,9 +1243,13 @@ export class GameScene extends Phaser.Scene {
     if (this.areArenaHazardsUnlocked()) {
       this.generateLavaPools();
       this.generatePortal();
+      this.scheduleNextVolcanoEvent();
     } else {
       this.lavaPools = [];
+      this.volcanoLavaPools = [];
+      this.volcanoes = [];
       this.portal = undefined;
+      this.nextVolcanoEventAt = 0;
     }
 
     this.drawArenaBackground();
@@ -1308,10 +1361,95 @@ export class GameScene extends Phaser.Scene {
   }
 
   private isPointInLava(x: number, y: number, extraRadius = 0): boolean {
-    return this.lavaPools.some((pool) => {
+    return this.getAllLavaPools().some((pool) => {
       const safeRadius = pool.radius + extraRadius;
       return Phaser.Math.Distance.Between(x, y, pool.x, pool.y) <= safeRadius;
     });
+  }
+
+  private getAllLavaPools(): { x: number; y: number; radius: number }[] {
+    return [...this.lavaPools, ...this.volcanoLavaPools];
+  }
+
+  private scheduleNextVolcanoEvent(): void {
+    this.nextVolcanoEventAt =
+      this.time.now +
+      Phaser.Math.Between(HAZARD_CONFIG.volcanoEventMinMs, HAZARD_CONFIG.volcanoEventMaxMs);
+  }
+
+  private triggerVolcanoEvent(): void {
+    this.volcanoLavaPools = [];
+    this.volcanoes = [];
+
+    const poolCount = Phaser.Math.Between(
+      HAZARD_CONFIG.volcanoPoolCountMin,
+      HAZARD_CONFIG.volcanoPoolCountMax,
+    );
+    const expiresAt = this.time.now + HAZARD_CONFIG.volcanoDurationMs;
+
+    for (let i = 0; i < poolCount; i += 1) {
+      const pool = this.createVolcanoLavaPool(expiresAt);
+      if (!pool) {
+        continue;
+      }
+
+      this.volcanoLavaPools.push(pool);
+    }
+
+    if (this.volcanoLavaPools.length === 0) {
+      return;
+    }
+
+    this.volcanoes = this.volcanoLavaPools.map((pool) => {
+      const fromLeft = pool.x < this.scale.width / 2;
+      const fromTop = Phaser.Math.Between(0, 1) === 0;
+      const x = fromLeft ? 28 : this.scale.width - 28;
+      const y = fromTop ? 28 : this.scale.height - 28;
+      return { x, y, targetX: pool.x, targetY: pool.y };
+    });
+
+    this.drawArenaBackground();
+  }
+
+  private createVolcanoLavaPool(
+    expiresAt: number,
+  ): { x: number; y: number; radius: number; expiresAt: number } | undefined {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const radius = Phaser.Math.Between(
+        HAZARD_CONFIG.volcanoMinRadius,
+        HAZARD_CONFIG.volcanoMaxRadius,
+      );
+      const x = Phaser.Math.Between(
+        HAZARD_CONFIG.volcanoSpawnPadding + radius,
+        this.scale.width - HAZARD_CONFIG.volcanoSpawnPadding - radius,
+      );
+      const y = Phaser.Math.Between(
+        HAZARD_CONFIG.volcanoSpawnPadding + radius,
+        this.scale.height - HAZARD_CONFIG.volcanoSpawnPadding - radius,
+      );
+
+      if (
+        Phaser.Math.Distance.Between(x, y, this.player.sprite.x, this.player.sprite.y) <
+        radius + HAZARD_CONFIG.volcanoPlayerSafeRadius
+      ) {
+        continue;
+      }
+
+      if (this.portal && Phaser.Math.Distance.Between(x, y, this.portal.x, this.portal.y) < radius + 36) {
+        continue;
+      }
+
+      const overlapsLava = this.getAllLavaPools().some((pool) => {
+        return Phaser.Math.Distance.Between(x, y, pool.x, pool.y) < radius + pool.radius + 28;
+      });
+      if (overlapsLava) {
+        continue;
+      }
+
+      return { x, y, radius, expiresAt };
+    }
+
+    return undefined;
   }
 
   private isPointNearLine(
