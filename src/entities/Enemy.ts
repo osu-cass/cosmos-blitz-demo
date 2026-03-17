@@ -3,16 +3,24 @@ import { ENEMY_CONFIG } from '../config/constants';
 
 export class Enemy {
   readonly sprite: Phaser.Physics.Arcade.Image;
+  readonly isSpecial: boolean;
   private readonly strafeDirection: number;
   private readonly strafePhase: number;
   private readonly attackPhase: number;
+  private nextShotAtMs = 0;
 
-  constructor(scene: Phaser.Scene, x: number, y: number) {
+  constructor(scene: Phaser.Scene, x: number, y: number, isSpecial = false) {
     this.sprite = scene.physics.add.image(x, y, 'enemy');
+    this.isSpecial = isSpecial;
     this.sprite.setCircle(ENEMY_CONFIG.size / 2 - 1);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setBounce(ENEMY_CONFIG.bounceFactor, ENEMY_CONFIG.bounceFactor);
     body.setCollideWorldBounds(true);
+    if (this.isSpecial) {
+      this.sprite.setTint(ENEMY_CONFIG.specialTint);
+      this.sprite.setScale(1.16);
+      this.nextShotAtMs = scene.time.now + Phaser.Math.Between(500, 900);
+    }
     this.strafeDirection = Math.random() < 0.5 ? -1 : 1;
     this.strafePhase = Math.random() * Math.PI * 2;
     this.attackPhase = Math.random() * 2.6;
@@ -130,5 +138,16 @@ export class Enemy {
 
   destroy(): void {
     this.sprite.destroy();
+  }
+
+  canShoot(nowMs: number): boolean {
+    return this.isSpecial && nowMs >= this.nextShotAtMs;
+  }
+
+  scheduleNextShot(nowMs: number): void {
+    this.nextShotAtMs =
+      nowMs +
+      ENEMY_CONFIG.specialShotCooldownMs +
+      Phaser.Math.Between(-180, 220);
   }
 }

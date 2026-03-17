@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { PLAYER_CONFIG } from '../config/constants';
+import { PICKUP_CONFIG, PLAYER_CONFIG } from '../config/constants';
 
 type MovementInput = {
   x: number;
@@ -20,6 +20,7 @@ export class Player {
   };
 
   private health: number;
+  private shieldHits = 0;
   private invulnerableUntil = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
@@ -69,9 +70,37 @@ export class Player {
     return this.health > 0;
   }
 
+  hasShield(): boolean {
+    return this.shieldHits > 0;
+  }
+
+  grantShield(): void {
+    this.shieldHits = PICKUP_CONFIG.shieldAbsorbHits;
+    this.sprite.setTint(0x9be7ff);
+  }
+
   takeDamage(sceneTimeMs: number, amount: number): boolean {
     if (sceneTimeMs < this.invulnerableUntil || !this.isAlive()) {
       return false;
+    }
+
+    if (this.shieldHits > 0) {
+      this.shieldHits -= 1;
+      this.invulnerableUntil = sceneTimeMs + Math.floor(PLAYER_CONFIG.damageInvulnerabilityMs * 0.6);
+      this.sprite.clearTint();
+      this.sprite.setTintFill(0x79f2ff);
+      this.sprite.scene.time.delayedCall(PLAYER_CONFIG.damageFlashMs, () => {
+        if (!this.sprite.active) {
+          return;
+        }
+
+        if (this.shieldHits > 0) {
+          this.sprite.setTint(0x9be7ff);
+        } else {
+          this.sprite.clearTint();
+        }
+      });
+      return true;
     }
 
     this.health = Math.max(0, this.health - amount);
@@ -79,6 +108,10 @@ export class Player {
 
     this.sprite.setTintFill(0xffffff);
     this.sprite.scene.time.delayedCall(PLAYER_CONFIG.damageFlashMs, () => {
+      if (!this.sprite.active) {
+        return;
+      }
+
       this.sprite.clearTint();
     });
 

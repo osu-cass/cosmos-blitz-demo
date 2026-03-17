@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import './style.css';
 import { GAME_HEIGHT, GAME_WIDTH } from './config/constants';
 import { GameScene } from './scenes/GameScene';
+import { PauseScene } from './scenes/PauseScene';
 import { TitleScene } from './scenes/TitleScene';
 
 new Phaser.Game({
@@ -20,5 +21,5 @@ new Phaser.Game({
       debug: false,
     },
   },
-  scene: [TitleScene, GameScene],
+  scene: [TitleScene, GameScene, PauseScene],
 });

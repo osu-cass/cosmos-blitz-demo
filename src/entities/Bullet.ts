@@ -11,17 +11,20 @@ export class Bullet {
     y: number,
     direction: Phaser.Math.Vector2,
     createdAtMs: number,
+    texture = 'bullet',
+    speed = BULLET_CONFIG.speed,
+    lifetimeMs = BULLET_CONFIG.maxLifetimeMs,
   ) {
-    this.sprite = scene.physics.add.image(x, y, 'bullet');
+    this.sprite = scene.physics.add.image(x, y, texture);
     this.sprite.setCircle(BULLET_CONFIG.size / 2 - 1);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.allowGravity = false;
     this.sprite.setVelocity(
-      direction.x * BULLET_CONFIG.speed,
-      direction.y * BULLET_CONFIG.speed,
+      direction.x * speed,
+      direction.y * speed,
     );
 
-    this.expireAtMs = createdAtMs + BULLET_CONFIG.maxLifetimeMs;
+    this.expireAtMs = createdAtMs + lifetimeMs;
   }
 
   isExpired(nowMs: number): boolean {

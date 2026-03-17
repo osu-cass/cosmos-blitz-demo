@@ -3,6 +3,7 @@ import {
   BULLET_CONFIG,
   COLORS,
   ENEMY_CONFIG,
+  PICKUP_CONFIG,
   PLAYER_CONFIG,
 } from '../config/constants';
 import { Bullet } from '../entities/Bullet';
@@ -16,9 +17,12 @@ export class GameScene extends Phaser.Scene {
   private enemyGroup!: Phaser.Physics.Arcade.Group;
   private enemies: Enemy[] = [];
   private bullets: Bullet[] = [];
+  private enemyBullets: Bullet[] = [];
   private waveManager = new WaveManager();
+  private shieldPickup?: Phaser.GameObjects.Image;
 
   private healthText!: Phaser.GameObjects.Text;
+  private shieldText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private remainingText!: Phaser.GameObjects.Text;
   private gameOverText!: Phaser.GameObjects.Text;
@@ -26,7 +30,11 @@ export class GameScene extends Phaser.Scene {
   private spawnTimer = 0;
   private spawnIntervalMs = 550;
   private lastShotAtMs = 0;
+  private specialEnemyWave = 0;
+  private nextShieldSpawnAt = 0;
+  private shieldExpiresAt = 0;
   private gameOver = false;
+  private isPaused = false;
 
   constructor() {
     super('GameScene');
@@ -53,6 +61,8 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.collider(this.enemyGroup, this.enemyGroup);
 
     this.waveManager.startFirstWave();
+    this.specialEnemyWave = this.waveManager.getState().currentWave - 1;
+    this.scheduleNextShieldSpawn();
     this.createHud();
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -73,7 +83,7 @@ export class GameScene extends Phaser.Scene {
 
     this.input.keyboard?.on('keydown-ESC', () => {
       if (!this.gameOver) {
-        this.setGameOver();
+        this.openPauseMenu();
       }
     });
 
@@ -96,7 +106,9 @@ export class GameScene extends Phaser.Scene {
     this.player.update();
     this.updateEnemies();
     this.updateBullets();
+    this.updateEnemyBullets();
     this.handleSpawning(delta);
+    this.updateShieldPickup();
     this.updateHud();
   }
 
@@ -109,7 +121,9 @@ export class GameScene extends Phaser.Scene {
 
     for (let i = enemyCount - 1; i >= 0; i -= 1) {
       const enemy = this.enemies[i];
-      const slotAngle = (i / Math.max(enemyCount, 1)) * Phaser.Math.PI2 + timeSeconds * ENEMY_CONFIG.attackRotateSpeed;
+      const slotAngle =
+        (i / Math.max(enemyCount, 1)) * Phaser.Math.PI2 +
+        timeSeconds * ENEMY_CONFIG.attackRotateSpeed;
       const formationTarget = new Phaser.Math.Vector2(
         target.x + Math.cos(slotAngle) * ENEMY_CONFIG.attackRingRadius,
         target.y + Math.sin(slotAngle) * ENEMY_CONFIG.attackRingRadius,
@@ -117,6 +131,7 @@ export class GameScene extends Phaser.Scene {
 
       const avoidance = this.computeEnemyAvoidance(i);
       enemy.update(target, targetVelocity, timeSeconds, formationTarget, avoidance);
+      this.tryFireEnemyShot(enemy);
     }
 
     this.enforceEnemySpacing(target);
@@ -137,7 +152,8 @@ export class GameScene extends Phaser.Scene {
         const ay = a.y - playerPos.y;
         const bx = b.x - playerPos.x;
         const by = b.y - playerPos.y;
-        const bothNearPlayer = ax * ax + ay * ay <= nearPlayerSq && bx * bx + by * by <= nearPlayerSq;
+        const bothNearPlayer =
+          ax * ax + ay * ay <= nearPlayerSq && bx * bx + by * by <= nearPlayerSq;
         if (bothNearPlayer) {
           continue;
         }
@@ -211,12 +227,83 @@ export class GameScene extends Phaser.Scene {
     this.spawnEnemyAtEdge();
   }
 
+  private updateShieldPickup(): void {
+    if (!this.shieldPickup && this.time.now >= this.nextShieldSpawnAt) {
+      this.spawnShieldPickup();
+    }
+
+    if (this.shieldPickup && this.time.now >= this.shieldExpiresAt) {
+      this.removeShieldPickup();
+      this.scheduleNextShieldSpawn();
+      return;
+    }
+
+    if (!this.shieldPickup) {
+      return;
+    }
+
+    const pickedUp = Phaser.Geom.Intersects.RectangleToRectangle(
+      this.player.sprite.getBounds(),
+      this.shieldPickup.getBounds(),
+    );
+
+    if (!pickedUp) {
+      return;
+    }
+
+    this.player.grantShield();
+    this.removeShieldPickup();
+    this.scheduleNextShieldSpawn();
+  }
+
+  private spawnShieldPickup(): void {
+    const x = Phaser.Math.Between(
+      PICKUP_CONFIG.shieldPadding,
+      this.scale.width - PICKUP_CONFIG.shieldPadding,
+    );
+    const y = Phaser.Math.Between(
+      PICKUP_CONFIG.shieldPadding,
+      this.scale.height - PICKUP_CONFIG.shieldPadding,
+    );
+
+    const tooCloseToPlayer =
+      Phaser.Math.Distance.Between(x, y, this.player.sprite.x, this.player.sprite.y) <
+      PLAYER_CONFIG.size * 3;
+
+    if (tooCloseToPlayer) {
+      this.nextShieldSpawnAt = this.time.now + 1000;
+      return;
+    }
+
+    this.shieldPickup = this.add
+      .image(x, y, 'shieldPickup')
+      .setDepth(3);
+    this.shieldExpiresAt = this.time.now + PICKUP_CONFIG.shieldLifetimeMs;
+  }
+
+  private scheduleNextShieldSpawn(): void {
+    this.nextShieldSpawnAt =
+      this.time.now +
+      Phaser.Math.Between(PICKUP_CONFIG.shieldSpawnMinMs, PICKUP_CONFIG.shieldSpawnMaxMs);
+  }
+
+  private removeShieldPickup(): void {
+    this.shieldPickup?.destroy();
+    this.shieldPickup = undefined;
+    this.shieldExpiresAt = 0;
+  }
+
   private spawnEnemyAtEdge(): void {
     const point = this.waveManager.getSpawnPosition(this.scale.width, this.scale.height);
-    const enemy = new Enemy(this, point.x, point.y);
+    const currentWave = this.waveManager.getState().currentWave;
+    const shouldSpawnSpecial = this.specialEnemyWave !== currentWave;
+    const enemy = new Enemy(this, point.x, point.y, shouldSpawnSpecial);
     this.enemies.push(enemy);
     this.enemyGroup.add(enemy.sprite);
     this.waveManager.onEnemySpawned();
+    if (shouldSpawnSpecial) {
+      this.specialEnemyWave = currentWave;
+    }
   }
 
   private shootToward(targetX: number, targetY: number): void {
@@ -283,6 +370,82 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private tryFireEnemyShot(enemy: Enemy): void {
+    if (!enemy.canShoot(this.time.now)) {
+      return;
+    }
+
+    const toPlayer = new Phaser.Math.Vector2(
+      this.player.sprite.x - enemy.sprite.x,
+      this.player.sprite.y - enemy.sprite.y,
+    );
+    const distanceSq = toPlayer.lengthSq();
+
+    if (distanceSq > ENEMY_CONFIG.specialShotRange * ENEMY_CONFIG.specialShotRange) {
+      return;
+    }
+
+    if (distanceSq < 0.001) {
+      enemy.scheduleNextShot(this.time.now);
+      return;
+    }
+
+    toPlayer.normalize();
+    const spawnDistance = (ENEMY_CONFIG.size * (enemy.isSpecial ? 0.7 : 0.5)) + BULLET_CONFIG.size;
+    const bullet = new Bullet(
+      this,
+      enemy.sprite.x + toPlayer.x * spawnDistance,
+      enemy.sprite.y + toPlayer.y * spawnDistance,
+      toPlayer,
+      this.time.now,
+      'enemyBullet',
+      BULLET_CONFIG.enemySpeed,
+      BULLET_CONFIG.enemyMaxLifetimeMs,
+    );
+    this.enemyBullets.push(bullet);
+    enemy.scheduleNextShot(this.time.now);
+  }
+
+  private updateEnemyBullets(): void {
+    for (let i = this.enemyBullets.length - 1; i >= 0; i -= 1) {
+      const bullet = this.enemyBullets[i];
+
+      if (bullet.isExpired(this.time.now)) {
+        bullet.destroy();
+        this.enemyBullets.splice(i, 1);
+        continue;
+      }
+
+      const outOfBounds =
+        bullet.sprite.x < -20 ||
+        bullet.sprite.y < -20 ||
+        bullet.sprite.x > this.scale.width + 20 ||
+        bullet.sprite.y > this.scale.height + 20;
+      if (outOfBounds) {
+        bullet.destroy();
+        this.enemyBullets.splice(i, 1);
+        continue;
+      }
+
+      const hitPlayer = Phaser.Geom.Intersects.RectangleToRectangle(
+        bullet.sprite.getBounds(),
+        this.player.sprite.getBounds(),
+      );
+      if (!hitPlayer) {
+        continue;
+      }
+
+      bullet.destroy();
+      this.enemyBullets.splice(i, 1);
+
+      const didTakeDamage = this.player.takeDamage(this.time.now, BULLET_CONFIG.enemyDamage);
+      if (didTakeDamage && !this.player.isAlive()) {
+        this.setGameOver();
+        return;
+      }
+    }
+  }
+
   private handlePlayerEnemyCollision(): void {
     const didTakeDamage = this.player.takeDamage(this.time.now, ENEMY_CONFIG.touchDamage);
     if (!didTakeDamage) {
@@ -296,6 +459,8 @@ export class GameScene extends Phaser.Scene {
 
   private setGameOver(): void {
     this.gameOver = true;
+    this.isPaused = false;
+    this.scene.stop('PauseScene');
     this.physics.world.pause();
     this.gameOverText.setVisible(true);
     this.player.sprite.setTint(0x888888);
@@ -312,11 +477,12 @@ export class GameScene extends Phaser.Scene {
     };
 
     this.healthText = this.add.text(16, 12, '', style).setDepth(10);
-    this.waveText = this.add.text(16, 44, '', style).setDepth(10);
-    this.remainingText = this.add.text(16, 76, '', style).setDepth(10);
+    this.shieldText = this.add.text(16, 44, '', style).setDepth(10);
+    this.waveText = this.add.text(16, 76, '', style).setDepth(10);
+    this.remainingText = this.add.text(16, 108, '', style).setDepth(10);
 
     this.add
-      .text(this.scale.width - 16, 12, 'ESC to Forfeit', {
+      .text(this.scale.width - 16, 12, 'ESC to Pause', {
         ...style,
         fontSize: '24px',
       })
@@ -345,13 +511,14 @@ export class GameScene extends Phaser.Scene {
     const waveState = this.waveManager.getState();
     const remaining = waveState.enemiesToSpawn + waveState.enemiesAlive;
 
-    this.healthText.setText(`❤ Health: ${this.player.getHealth()}/${PLAYER_CONFIG.maxHealth}`);
-    this.waveText.setText(`⚑ Wave: ${waveState.currentWave}`);
+    this.healthText.setText(`Health: ${this.player.getHealth()}/${PLAYER_CONFIG.maxHealth}`);
+    this.shieldText.setText(`Shield: ${this.player.hasShield() ? 'READY' : 'NONE'}`);
+    this.waveText.setText(`Wave: ${waveState.currentWave}`);
 
     if (waveState.inBreak) {
-      this.remainingText.setText('☠ Enemies: 0 (next wave soon...)');
+      this.remainingText.setText('Enemies: 0 (next wave soon...)');
     } else {
-      this.remainingText.setText(`☠ Enemies: ${remaining}`);
+      this.remainingText.setText(`Enemies: ${remaining}`);
     }
   }
 
@@ -381,6 +548,36 @@ export class GameScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, width, height);
     this.drawArenaBackground();
     this.gameOverText.setPosition(width / 2, height / 2);
+  }
+
+  private openPauseMenu(): void {
+    if (this.isPaused) {
+      return;
+    }
+
+    this.isPaused = true;
+    this.scene.launch('PauseScene');
+    this.scene.pause();
+  }
+
+  resumeFromPause(): void {
+    this.isPaused = false;
+    this.scene.stop('PauseScene');
+    this.scene.resume();
+  }
+
+  restartRun(): void {
+    this.isPaused = false;
+    this.gameOver = false;
+    this.scene.stop('PauseScene');
+    this.scene.restart();
+  }
+
+  returnToTitle(): void {
+    this.isPaused = false;
+    this.gameOver = false;
+    this.scene.stop('PauseScene');
+    this.scene.start('TitleScene');
   }
 
   private createPlaceholderTextures(): void {
@@ -415,6 +612,26 @@ export class GameScene extends Phaser.Scene {
     g.fillCircle(BULLET_CONFIG.size / 2, BULLET_CONFIG.size / 2, BULLET_CONFIG.size / 2 - 1);
     g.generateTexture('bullet', BULLET_CONFIG.size, BULLET_CONFIG.size);
 
+    g.clear();
+    g.fillStyle(ENEMY_CONFIG.specialTint, 1);
+    g.fillCircle(BULLET_CONFIG.size / 2, BULLET_CONFIG.size / 2, BULLET_CONFIG.size / 2 - 1);
+    g.generateTexture('enemyBullet', BULLET_CONFIG.size, BULLET_CONFIG.size);
+
+    g.clear();
+    g.lineStyle(3, COLORS.shield, 1);
+    g.strokeCircle(
+      PICKUP_CONFIG.shieldSize / 2,
+      PICKUP_CONFIG.shieldSize / 2,
+      PICKUP_CONFIG.shieldSize / 2 - 3,
+    );
+    g.fillStyle(COLORS.shield, 0.2);
+    g.fillCircle(
+      PICKUP_CONFIG.shieldSize / 2,
+      PICKUP_CONFIG.shieldSize / 2,
+      PICKUP_CONFIG.shieldSize / 2 - 5,
+    );
+    g.generateTexture('shieldPickup', PICKUP_CONFIG.shieldSize, PICKUP_CONFIG.shieldSize);
+
     g.destroy();
   }
 
@@ -423,6 +640,12 @@ export class GameScene extends Phaser.Scene {
       bullet.destroy();
     }
     this.bullets = [];
+
+    for (const bullet of this.enemyBullets) {
+      bullet.destroy();
+    }
+    this.enemyBullets = [];
+    this.removeShieldPickup();
   }
 
   private destroyEnemyAt(index: number): void {

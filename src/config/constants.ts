@@ -13,6 +13,9 @@ export const ENEMY_CONFIG = {
   size: 24,
   speed: 105,
   touchDamage: 10,
+  specialTint: 0xffb347,
+  specialShotCooldownMs: 1400,
+  specialShotRange: 360,
   minEnemyGapPx: 10,
   spacingOverrideNearPlayerPx: 90,
   steeringSmoothing: 0.16,
@@ -29,8 +32,20 @@ export const ENEMY_CONFIG = {
 export const BULLET_CONFIG = {
   size: 10,
   speed: 560,
+  enemySpeed: 320,
+  enemyMaxLifetimeMs: 1800,
+  enemyDamage: 10,
   maxLifetimeMs: 1200,
   shootCooldownMs: 130,
+};
+
+export const PICKUP_CONFIG = {
+  shieldSize: 22,
+  shieldSpawnMinMs: 7000,
+  shieldSpawnMaxMs: 12000,
+  shieldLifetimeMs: 9000,
+  shieldPadding: 48,
+  shieldAbsorbHits: 1,
 };
 
 export const WAVE_CONFIG = {
@@ -45,6 +60,7 @@ export const COLORS = {
   floorTileB: 0x2b3d49,
   player: 0x44ccff,
   enemy: 0xff6b6b,
+  shield: 0x79f2ff,
   uiText: '#ffffff',
   uiShadow: '#000000',
 };
