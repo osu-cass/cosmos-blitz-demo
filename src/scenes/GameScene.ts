@@ -28,6 +28,7 @@ export class GameScene extends Phaser.Scene {
   private minigunPickup?: Phaser.GameObjects.Image;
   private laserPickup?: Phaser.GameObjects.Image;
   private donutPickup?: Phaser.GameObjects.Image;
+  private fruitPickup?: Phaser.GameObjects.Image;
 
   private healthText!: Phaser.GameObjects.Text;
   private shieldText!: Phaser.GameObjects.Text;
@@ -52,6 +53,7 @@ export class GameScene extends Phaser.Scene {
   private nextLaserSpawnAt = 0;
   private laserExpiresAt = 0;
   private donutExpiresAt = 0;
+  private fruitExpiresAt = 0;
   private lastLavaDamageAt = 0;
   private lastLaserTickAt = 0;
   private lastPortalTeleportAt = 0;
@@ -145,6 +147,7 @@ export class GameScene extends Phaser.Scene {
     this.updateMinigunPickup();
     this.updateLaserPickup();
     this.updateDonutPickup();
+    this.updateFruitPickup();
     this.updateLaserWeapon();
     this.updateHud();
 
@@ -158,6 +161,7 @@ export class GameScene extends Phaser.Scene {
     if (currentWave !== this.observedWave) {
       this.observedWave = currentWave;
       this.trySpawnDonutForWave(currentWave);
+      this.trySpawnFruitForWave(currentWave);
     }
 
     if (this.donutPickup && this.time.now >= this.donutExpiresAt) {
@@ -184,6 +188,33 @@ export class GameScene extends Phaser.Scene {
 
     this.player.heal(PICKUP_CONFIG.healthHealAmount);
     this.removeDonutPickup();
+  }
+
+  private updateFruitPickup(): void {
+    if (this.fruitPickup && this.time.now >= this.fruitExpiresAt) {
+      this.removeFruitPickup();
+      return;
+    }
+
+    if (!this.fruitPickup) {
+      return;
+    }
+
+    const pickedUp =
+      Phaser.Math.Distance.Between(
+        this.player.sprite.x,
+        this.player.sprite.y,
+        this.fruitPickup.x,
+        this.fruitPickup.y,
+      ) <=
+      PLAYER_CONFIG.size * 0.75 + PICKUP_CONFIG.healthSize * 0.5;
+
+    if (!pickedUp) {
+      return;
+    }
+
+    this.player.heal(PICKUP_CONFIG.healthHealAmount);
+    this.removeFruitPickup();
   }
 
   private updateLavaHazards(): void {
@@ -601,7 +632,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private trySpawnDonutForWave(wave: number): void {
-    if (wave % 2 !== 0 || this.donutPickup) {
+    if (wave % 2 !== 0 || wave % 4 === 0 || this.donutPickup || this.fruitPickup) {
       return;
     }
 
@@ -627,6 +658,35 @@ export class GameScene extends Phaser.Scene {
     this.donutPickup?.destroy();
     this.donutPickup = undefined;
     this.donutExpiresAt = 0;
+  }
+
+  private trySpawnFruitForWave(wave: number): void {
+    if (wave % 4 !== 0 || this.fruitPickup || this.donutPickup) {
+      return;
+    }
+
+    const point = this.findSafeOpenPoint(PICKUP_CONFIG.shieldPadding);
+    if (!point) {
+      return;
+    }
+
+    const { x, y } = point;
+    const tooCloseToPlayer =
+      Phaser.Math.Distance.Between(x, y, this.player.sprite.x, this.player.sprite.y) <
+      PLAYER_CONFIG.size * 3;
+
+    if (tooCloseToPlayer) {
+      return;
+    }
+
+    this.fruitPickup = this.add.image(x, y, 'fruitPickup').setDepth(3);
+    this.fruitExpiresAt = this.time.now + PICKUP_CONFIG.healthLifetimeMs;
+  }
+
+  private removeFruitPickup(): void {
+    this.fruitPickup?.destroy();
+    this.fruitPickup = undefined;
+    this.fruitExpiresAt = 0;
   }
 
   private spawnEnemyAtEdge(): void {
@@ -972,6 +1032,7 @@ export class GameScene extends Phaser.Scene {
       { label: 'Minigun', texture: 'minigunPickup', scale: 0.88 },
       { label: 'Laser', texture: 'laserPickup', scale: 0.88 },
       { label: 'Donut', texture: 'donutPickup', scale: 0.86 },
+      { label: 'Apple', texture: 'fruitPickup', scale: 0.9 },
       { label: 'Lava', texture: 'lavaLegendIcon', scale: 0.9 },
       { label: 'Portal', texture: 'portalLegendIcon', scale: 0.9 },
     ];
@@ -1362,6 +1423,25 @@ export class GameScene extends Phaser.Scene {
     g.generateTexture('donutPickup', PICKUP_CONFIG.healthSize, PICKUP_CONFIG.healthSize);
 
     g.clear();
+    g.fillStyle(COLORS.fruit, 1);
+    g.fillCircle(
+      PICKUP_CONFIG.healthSize / 2,
+      PICKUP_CONFIG.healthSize / 2 + 1,
+      PICKUP_CONFIG.healthSize / 2 - 3,
+    );
+    g.fillStyle(0xff8b92, 0.8);
+    g.fillCircle(
+      PICKUP_CONFIG.healthSize / 2 - 4,
+      PICKUP_CONFIG.healthSize / 2 - 2,
+      4,
+    );
+    g.fillStyle(0x6f3a1d, 1);
+    g.fillRect(PICKUP_CONFIG.healthSize / 2 - 1, 3, 2, 6);
+    g.fillStyle(COLORS.fruitLeaf, 1);
+    g.fillEllipse(PICKUP_CONFIG.healthSize / 2 + 5, 7, 8, 5);
+    g.generateTexture('fruitPickup', PICKUP_CONFIG.healthSize, PICKUP_CONFIG.healthSize);
+
+    g.clear();
     g.fillStyle(COLORS.lavaOuter, 1);
     g.fillCircle(12, 12, 11);
     g.fillStyle(COLORS.lavaMid, 1);
@@ -1396,6 +1476,7 @@ export class GameScene extends Phaser.Scene {
     this.removeMinigunPickup();
     this.removeLaserPickup();
     this.removeDonutPickup();
+    this.removeFruitPickup();
     this.laserGraphics.clear();
   }
 

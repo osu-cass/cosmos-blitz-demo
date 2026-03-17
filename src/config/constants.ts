@@ -114,6 +114,8 @@ export const COLORS = {
   minigun: 0xb9ff66,
   donut: 0xff9f68,
   donutIcing: 0xff6fae,
+  fruit: 0xff5a5f,
+  fruitLeaf: 0x68b84f,
   lavaOuter: 0x702100,
   lavaMid: 0xd9480f,
   lavaInner: 0xffb347,
