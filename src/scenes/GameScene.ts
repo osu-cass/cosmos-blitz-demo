@@ -71,13 +71,6 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    this.input.keyboard?.on('keydown-Q', () => {
-      if (this.gameOver) {
-        this.physics.world.resume();
-        this.scene.start('TitleScene');
-      }
-    });
-
     this.input.keyboard?.on('keydown-ESC', () => {
       if (!this.gameOver) {
         this.setGameOver();
@@ -334,7 +327,7 @@ export class GameScene extends Phaser.Scene {
       .text(
         this.scale.width / 2,
         this.scale.height / 2,
-        'GAME OVER\nPress R to Restart\nPress Q to Quit',
+        'GAME OVER\nPress R to Restart',
         {
           ...style,
           fontSize: '58px',
