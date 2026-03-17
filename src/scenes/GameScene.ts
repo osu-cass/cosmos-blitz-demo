@@ -33,6 +33,7 @@ export class GameScene extends Phaser.Scene {
   private spawnIntervalMs = 550;
   private lastShotAtMs = 0;
   private specialEnemyWave = 0;
+  private blitzEnemyWave = 0;
   private nextShieldSpawnAt = 0;
   private shieldExpiresAt = 0;
   private nextBurstSpawnAt = 0;
@@ -66,6 +67,7 @@ export class GameScene extends Phaser.Scene {
 
     this.waveManager.startFirstWave();
     this.specialEnemyWave = this.waveManager.getState().currentWave - 1;
+    this.blitzEnemyWave = this.waveManager.getState().currentWave - 1;
     this.scheduleNextShieldSpawn();
     this.scheduleNextBurstSpawn();
     this.createHud();
@@ -369,13 +371,28 @@ export class GameScene extends Phaser.Scene {
     const point = this.waveManager.getSpawnPosition(this.scale.width, this.scale.height);
     const currentWave = this.waveManager.getState().currentWave;
     const shouldSpawnSpecial = this.specialEnemyWave !== currentWave;
-    const shouldSpawnArmored = Math.random() < ENEMY_CONFIG.armoredSpawnChance;
-    const enemy = new Enemy(this, point.x, point.y, shouldSpawnSpecial, shouldSpawnArmored);
+    const shouldSpawnBlitz =
+      currentWave > 1 &&
+      this.blitzEnemyWave !== currentWave &&
+      Math.random() < ENEMY_CONFIG.blitzSpawnChance;
+    const shouldSpawnArmored =
+      !shouldSpawnBlitz && Math.random() < ENEMY_CONFIG.armoredSpawnChance;
+    const enemy = new Enemy(
+      this,
+      point.x,
+      point.y,
+      shouldSpawnSpecial,
+      shouldSpawnArmored,
+      shouldSpawnBlitz,
+    );
     this.enemies.push(enemy);
     this.enemyGroup.add(enemy.sprite);
     this.waveManager.onEnemySpawned();
     if (shouldSpawnSpecial) {
       this.specialEnemyWave = currentWave;
+    }
+    if (shouldSpawnBlitz) {
+      this.blitzEnemyWave = currentWave;
     }
   }
 
@@ -481,18 +498,41 @@ export class GameScene extends Phaser.Scene {
     }
 
     toPlayer.normalize();
-    const spawnDistance = (ENEMY_CONFIG.size * (enemy.isSpecial ? 0.7 : 0.5)) + BULLET_CONFIG.size;
-    const bullet = new Bullet(
-      this,
-      enemy.sprite.x + toPlayer.x * spawnDistance,
-      enemy.sprite.y + toPlayer.y * spawnDistance,
-      toPlayer,
-      this.time.now,
-      'enemyBullet',
-      BULLET_CONFIG.enemySpeed,
-      BULLET_CONFIG.enemyMaxLifetimeMs,
-    );
-    this.enemyBullets.push(bullet);
+    const spawnDistance =
+      (ENEMY_CONFIG.size * (enemy.isSpecial || enemy.isBlitz ? 0.7 : 0.5)) + BULLET_CONFIG.size;
+
+    if (enemy.isBlitz) {
+      const centerIndex = Math.floor(ENEMY_CONFIG.blitzShotCount / 2);
+
+      for (let i = 0; i < ENEMY_CONFIG.blitzShotCount; i += 1) {
+        const spreadOffset = (i - centerIndex) * ENEMY_CONFIG.blitzShotSpreadRadians;
+        const direction = toPlayer.clone().rotate(spreadOffset);
+        const bullet = new Bullet(
+          this,
+          enemy.sprite.x + direction.x * spawnDistance,
+          enemy.sprite.y + direction.y * spawnDistance,
+          direction,
+          this.time.now,
+          'enemyBullet',
+          BULLET_CONFIG.enemySpeed,
+          BULLET_CONFIG.enemyMaxLifetimeMs,
+        );
+        this.enemyBullets.push(bullet);
+      }
+    } else {
+      const bullet = new Bullet(
+        this,
+        enemy.sprite.x + toPlayer.x * spawnDistance,
+        enemy.sprite.y + toPlayer.y * spawnDistance,
+        toPlayer,
+        this.time.now,
+        'enemyBullet',
+        BULLET_CONFIG.enemySpeed,
+        BULLET_CONFIG.enemyMaxLifetimeMs,
+      );
+      this.enemyBullets.push(bullet);
+    }
+
     enemy.scheduleNextShot(this.time.now);
   }
 

@@ -5,16 +5,25 @@ export class Enemy {
   readonly sprite: Phaser.Physics.Arcade.Image;
   readonly isSpecial: boolean;
   readonly isArmored: boolean;
+  readonly isBlitz: boolean;
   private readonly strafeDirection: number;
   private readonly strafePhase: number;
   private readonly attackPhase: number;
   private nextShotAtMs = 0;
   private hitsRemaining: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, isSpecial = false, isArmored = false) {
+  constructor(
+    scene: Phaser.Scene,
+    x: number,
+    y: number,
+    isSpecial = false,
+    isArmored = false,
+    isBlitz = false,
+  ) {
     this.sprite = scene.physics.add.image(x, y, 'enemy');
     this.isSpecial = isSpecial;
     this.isArmored = isArmored;
+    this.isBlitz = isBlitz;
     this.hitsRemaining = this.isArmored ? 2 : 1;
     this.sprite.setCircle(ENEMY_CONFIG.size / 2 - 1);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -30,7 +39,12 @@ export class Enemy {
       this.sprite.setScale(this.isSpecial ? 1.24 : 1.12);
     }
 
-    if (this.isSpecial || this.isArmored) {
+    if (this.isBlitz) {
+      this.sprite.setTint(ENEMY_CONFIG.blitzTint);
+      this.sprite.setScale(ENEMY_CONFIG.blitzSizeScale);
+    }
+
+    if (this.isSpecial || this.isArmored || this.isBlitz) {
       this.nextShotAtMs = scene.time.now + Phaser.Math.Between(500, 900);
     }
     this.strafeDirection = Math.random() < 0.5 ? -1 : 1;
@@ -130,7 +144,9 @@ export class Enemy {
 
     desiredDirection.normalize();
 
-    const speedMultiplier = isChargeWindow ? 1.12 : distance > 320 ? 1.08 : 1;
+    const baseSpeedMultiplier = this.isBlitz ? ENEMY_CONFIG.blitzSpeedMultiplier : 1;
+    const speedMultiplier =
+      (isChargeWindow ? 1.12 : distance > 320 ? 1.08 : 1) * baseSpeedMultiplier;
     const desiredVelocity = desiredDirection.scale(ENEMY_CONFIG.speed * speedMultiplier);
 
     const nextVx = Phaser.Math.Linear(
@@ -153,7 +169,7 @@ export class Enemy {
   }
 
   canShoot(nowMs: number): boolean {
-    return (this.isSpecial || this.isArmored) && nowMs >= this.nextShotAtMs;
+    return (this.isSpecial || this.isArmored || this.isBlitz) && nowMs >= this.nextShotAtMs;
   }
 
   takeHit(): boolean {
@@ -176,6 +192,14 @@ export class Enemy {
   }
 
   scheduleNextShot(nowMs: number): void {
+    if (this.isBlitz) {
+      this.nextShotAtMs =
+        nowMs +
+        ENEMY_CONFIG.blitzShotCooldownMs +
+        Phaser.Math.Between(-150, 150);
+      return;
+    }
+
     this.nextShotAtMs =
       nowMs +
       ENEMY_CONFIG.specialShotCooldownMs +
