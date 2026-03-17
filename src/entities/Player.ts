@@ -24,6 +24,7 @@ export class Player {
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
     this.sprite = scene.physics.add.image(x, y, 'player');
+    this.sprite.setScale(1.2);
     this.sprite.setCircle(PLAYER_CONFIG.size / 2 - 1);
     this.sprite.setDrag(1300, 1300);
     this.sprite.setCollideWorldBounds(true);
