@@ -4,14 +4,18 @@ import { ENEMY_CONFIG } from '../config/constants';
 export class Enemy {
   readonly sprite: Phaser.Physics.Arcade.Image;
   readonly isSpecial: boolean;
+  readonly isArmored: boolean;
   private readonly strafeDirection: number;
   private readonly strafePhase: number;
   private readonly attackPhase: number;
   private nextShotAtMs = 0;
+  private hitsRemaining: number;
 
-  constructor(scene: Phaser.Scene, x: number, y: number, isSpecial = false) {
+  constructor(scene: Phaser.Scene, x: number, y: number, isSpecial = false, isArmored = false) {
     this.sprite = scene.physics.add.image(x, y, 'enemy');
     this.isSpecial = isSpecial;
+    this.isArmored = isArmored;
+    this.hitsRemaining = this.isArmored ? 2 : 1;
     this.sprite.setCircle(ENEMY_CONFIG.size / 2 - 1);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
     body.setBounce(ENEMY_CONFIG.bounceFactor, ENEMY_CONFIG.bounceFactor);
@@ -19,6 +23,14 @@ export class Enemy {
     if (this.isSpecial) {
       this.sprite.setTint(ENEMY_CONFIG.specialTint);
       this.sprite.setScale(1.16);
+    }
+
+    if (this.isArmored) {
+      this.sprite.setTint(ENEMY_CONFIG.armoredTint);
+      this.sprite.setScale(this.isSpecial ? 1.24 : 1.12);
+    }
+
+    if (this.isSpecial || this.isArmored) {
       this.nextShotAtMs = scene.time.now + Phaser.Math.Between(500, 900);
     }
     this.strafeDirection = Math.random() < 0.5 ? -1 : 1;
@@ -141,7 +153,26 @@ export class Enemy {
   }
 
   canShoot(nowMs: number): boolean {
-    return this.isSpecial && nowMs >= this.nextShotAtMs;
+    return (this.isSpecial || this.isArmored) && nowMs >= this.nextShotAtMs;
+  }
+
+  takeHit(): boolean {
+    this.hitsRemaining -= 1;
+
+    if (this.hitsRemaining <= 0) {
+      return true;
+    }
+
+    this.sprite.setAlpha(0.45);
+    this.sprite.scene.time.delayedCall(ENEMY_CONFIG.armoredFlashMs, () => {
+      if (!this.sprite.active) {
+        return;
+      }
+
+      this.sprite.setAlpha(1);
+    });
+
+    return false;
   }
 
   scheduleNextShot(nowMs: number): void {

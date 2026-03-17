@@ -369,7 +369,8 @@ export class GameScene extends Phaser.Scene {
     const point = this.waveManager.getSpawnPosition(this.scale.width, this.scale.height);
     const currentWave = this.waveManager.getState().currentWave;
     const shouldSpawnSpecial = this.specialEnemyWave !== currentWave;
-    const enemy = new Enemy(this, point.x, point.y, shouldSpawnSpecial);
+    const shouldSpawnArmored = Math.random() < ENEMY_CONFIG.armoredSpawnChance;
+    const enemy = new Enemy(this, point.x, point.y, shouldSpawnSpecial, shouldSpawnArmored);
     this.enemies.push(enemy);
     this.enemyGroup.add(enemy.sprite);
     this.waveManager.onEnemySpawned();
@@ -449,7 +450,10 @@ export class GameScene extends Phaser.Scene {
           bullet.destroy();
           this.bullets.splice(i, 1);
 
-          this.destroyEnemyAt(j);
+          const destroyed = enemy.takeHit();
+          if (destroyed) {
+            this.destroyEnemyAt(j);
+          }
           break;
         }
       }
