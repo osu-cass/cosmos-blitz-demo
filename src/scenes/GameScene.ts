@@ -23,6 +23,7 @@ export class GameScene extends Phaser.Scene {
   private waveManager = new WaveManager();
   private shieldPickup?: Phaser.GameObjects.Image;
   private burstPickup?: Phaser.GameObjects.Image;
+  private minigunPickup?: Phaser.GameObjects.Image;
   private donutPickup?: Phaser.GameObjects.Image;
 
   private healthText!: Phaser.GameObjects.Text;
@@ -43,6 +44,8 @@ export class GameScene extends Phaser.Scene {
   private shieldExpiresAt = 0;
   private nextBurstSpawnAt = 0;
   private burstExpiresAt = 0;
+  private nextMinigunSpawnAt = 0;
+  private minigunExpiresAt = 0;
   private donutExpiresAt = 0;
   private lastLavaDamageAt = 0;
   private gameOver = false;
@@ -79,6 +82,7 @@ export class GameScene extends Phaser.Scene {
     this.blitzEnemyWave = this.observedWave - 1;
     this.scheduleNextShieldSpawn();
     this.scheduleNextBurstSpawn();
+    this.scheduleNextMinigunSpawn();
     this.createHud();
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -127,8 +131,13 @@ export class GameScene extends Phaser.Scene {
     this.updateLavaHazards();
     this.updateShieldPickup();
     this.updateBurstPickup();
+    this.updateMinigunPickup();
     this.updateDonutPickup();
     this.updateHud();
+
+    if (this.input.activePointer.isDown) {
+      this.shootToward(pointer.worldX, pointer.worldY);
+    }
   }
 
   private updateDonutPickup(): void {
@@ -387,6 +396,35 @@ export class GameScene extends Phaser.Scene {
     this.scheduleNextBurstSpawn();
   }
 
+  private updateMinigunPickup(): void {
+    if (!this.minigunPickup && this.time.now >= this.nextMinigunSpawnAt) {
+      this.spawnMinigunPickup();
+    }
+
+    if (this.minigunPickup && this.time.now >= this.minigunExpiresAt) {
+      this.removeMinigunPickup();
+      this.scheduleNextMinigunSpawn();
+      return;
+    }
+
+    if (!this.minigunPickup) {
+      return;
+    }
+
+    const pickedUp = Phaser.Geom.Intersects.RectangleToRectangle(
+      this.player.sprite.getBounds(),
+      this.minigunPickup.getBounds(),
+    );
+
+    if (!pickedUp) {
+      return;
+    }
+
+    this.player.grantMinigun(this.time.now);
+    this.removeMinigunPickup();
+    this.scheduleNextMinigunSpawn();
+  }
+
   private spawnBurstPickup(): void {
     const point = this.findSafeOpenPoint(PICKUP_CONFIG.shieldPadding);
     if (!point) {
@@ -421,6 +459,42 @@ export class GameScene extends Phaser.Scene {
     this.burstPickup?.destroy();
     this.burstPickup = undefined;
     this.burstExpiresAt = 0;
+  }
+
+  private spawnMinigunPickup(): void {
+    const point = this.findSafeOpenPoint(PICKUP_CONFIG.shieldPadding);
+    if (!point) {
+      this.nextMinigunSpawnAt = this.time.now + 1000;
+      return;
+    }
+
+    const { x, y } = point;
+
+    const tooCloseToPlayer =
+      Phaser.Math.Distance.Between(x, y, this.player.sprite.x, this.player.sprite.y) <
+      PLAYER_CONFIG.size * 3;
+
+    if (tooCloseToPlayer) {
+      this.nextMinigunSpawnAt = this.time.now + 1000;
+      return;
+    }
+
+    this.minigunPickup = this.add
+      .image(x, y, 'minigunPickup')
+      .setDepth(3);
+    this.minigunExpiresAt = this.time.now + PICKUP_CONFIG.minigunLifetimeMs;
+  }
+
+  private scheduleNextMinigunSpawn(): void {
+    this.nextMinigunSpawnAt =
+      this.time.now +
+      Phaser.Math.Between(PICKUP_CONFIG.minigunSpawnMinMs, PICKUP_CONFIG.minigunSpawnMaxMs);
+  }
+
+  private removeMinigunPickup(): void {
+    this.minigunPickup?.destroy();
+    this.minigunPickup = undefined;
+    this.minigunExpiresAt = 0;
   }
 
   private trySpawnDonutForWave(wave: number): void {
@@ -482,7 +556,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private shootToward(targetX: number, targetY: number): void {
-    if (this.time.now - this.lastShotAtMs < BULLET_CONFIG.shootCooldownMs) {
+    const hasMinigun = this.player.hasMinigun(this.time.now);
+    const shootCooldown = hasMinigun
+      ? PICKUP_CONFIG.minigunShootCooldownMs
+      : BULLET_CONFIG.shootCooldownMs;
+
+    if (this.time.now - this.lastShotAtMs < shootCooldown) {
       return;
     }
 
@@ -497,7 +576,13 @@ export class GameScene extends Phaser.Scene {
 
     direction.normalize();
 
-    if (this.player.hasBurstShot(this.time.now)) {
+    if (hasMinigun) {
+      const spread = Phaser.Math.FloatBetween(
+        -PICKUP_CONFIG.minigunSpreadRadians,
+        PICKUP_CONFIG.minigunSpreadRadians,
+      );
+      this.spawnPlayerBullet(direction.rotate(spread));
+    } else if (this.player.hasBurstShot(this.time.now)) {
       const centerIndex = Math.floor(PICKUP_CONFIG.burstShotsPerTap / 2);
 
       for (let i = 0; i < PICKUP_CONFIG.burstShotsPerTap; i += 1) {
@@ -733,6 +818,7 @@ export class GameScene extends Phaser.Scene {
       { label: 'Cyan blitz', texture: 'enemy', tint: ENEMY_CONFIG.blitzTint, scale: 1 },
       { label: 'Shield', texture: 'shieldPickup', scale: 0.9 },
       { label: 'Burst', texture: 'burstPickup', scale: 0.88 },
+      { label: 'Minigun', texture: 'minigunPickup', scale: 0.88 },
       { label: 'Donut', texture: 'donutPickup', scale: 0.86 },
       { label: 'Lava', texture: 'lavaLegendIcon', scale: 0.9 },
     ];
@@ -795,7 +881,12 @@ export class GameScene extends Phaser.Scene {
 
     this.healthText.setText(`Health: ${this.player.getHealth()}/${PLAYER_CONFIG.maxHealth}`);
     this.shieldText.setText(`Shield: ${this.player.hasShield() ? 'READY' : 'NONE'}`);
-    this.weaponText.setText(`Weapon: ${this.player.hasBurstShot(this.time.now) ? 'BURST' : 'NORMAL'}`);
+    const weaponLabel = this.player.hasMinigun(this.time.now)
+      ? 'MINIGUN'
+      : this.player.hasBurstShot(this.time.now)
+        ? 'BURST'
+        : 'NORMAL';
+    this.weaponText.setText(`Weapon: ${weaponLabel}`);
     this.waveText.setText(`Wave: ${waveState.currentWave}`);
 
     if (waveState.inBreak) {
@@ -1015,6 +1106,16 @@ export class GameScene extends Phaser.Scene {
     g.generateTexture('burstPickup', PICKUP_CONFIG.burstSize, PICKUP_CONFIG.burstSize);
 
     g.clear();
+    g.fillStyle(COLORS.minigun, 1);
+    g.fillRoundedRect(2, 7, PICKUP_CONFIG.minigunSize - 4, PICKUP_CONFIG.minigunSize - 14, 6);
+    g.fillStyle(0x173126, 1);
+    g.fillRect(8, Math.floor(PICKUP_CONFIG.minigunSize / 2) - 2, PICKUP_CONFIG.minigunSize - 7, 4);
+    g.fillRect(PICKUP_CONFIG.minigunSize - 8, Math.floor(PICKUP_CONFIG.minigunSize / 2) - 5, 3, 10);
+    g.fillStyle(0xffffff, 0.9);
+    g.fillCircle(7, Math.floor(PICKUP_CONFIG.minigunSize / 2), 2);
+    g.generateTexture('minigunPickup', PICKUP_CONFIG.minigunSize, PICKUP_CONFIG.minigunSize);
+
+    g.clear();
     g.fillStyle(COLORS.donut, 1);
     g.fillCircle(
       PICKUP_CONFIG.healthSize / 2,
@@ -1059,6 +1160,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyBullets = [];
     this.removeShieldPickup();
     this.removeBurstPickup();
+    this.removeMinigunPickup();
     this.removeDonutPickup();
   }
 
