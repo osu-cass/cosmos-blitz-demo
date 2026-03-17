@@ -23,6 +23,7 @@ export class GameScene extends Phaser.Scene {
   private waveManager = new WaveManager();
   private shieldPickup?: Phaser.GameObjects.Image;
   private burstPickup?: Phaser.GameObjects.Image;
+  private donutPickup?: Phaser.GameObjects.Image;
 
   private healthText!: Phaser.GameObjects.Text;
   private shieldText!: Phaser.GameObjects.Text;
@@ -36,10 +37,12 @@ export class GameScene extends Phaser.Scene {
   private lastShotAtMs = 0;
   private specialEnemyWave = 0;
   private blitzEnemyWave = 0;
+  private observedWave = 0;
   private nextShieldSpawnAt = 0;
   private shieldExpiresAt = 0;
   private nextBurstSpawnAt = 0;
   private burstExpiresAt = 0;
+  private donutExpiresAt = 0;
   private lastLavaDamageAt = 0;
   private gameOver = false;
   private isPaused = false;
@@ -70,8 +73,9 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.collider(this.enemyGroup, this.enemyGroup);
 
     this.waveManager.startFirstWave();
-    this.specialEnemyWave = this.waveManager.getState().currentWave - 1;
-    this.blitzEnemyWave = this.waveManager.getState().currentWave - 1;
+    this.observedWave = this.waveManager.getState().currentWave;
+    this.specialEnemyWave = this.observedWave - 1;
+    this.blitzEnemyWave = this.observedWave - 1;
     this.scheduleNextShieldSpawn();
     this.scheduleNextBurstSpawn();
     this.createHud();
@@ -122,7 +126,41 @@ export class GameScene extends Phaser.Scene {
     this.updateLavaHazards();
     this.updateShieldPickup();
     this.updateBurstPickup();
+    this.updateDonutPickup();
     this.updateHud();
+  }
+
+  private updateDonutPickup(): void {
+    const currentWave = this.waveManager.getState().currentWave;
+    if (currentWave !== this.observedWave) {
+      this.observedWave = currentWave;
+      this.trySpawnDonutForWave(currentWave);
+    }
+
+    if (this.donutPickup && this.time.now >= this.donutExpiresAt) {
+      this.removeDonutPickup();
+      return;
+    }
+
+    if (!this.donutPickup) {
+      return;
+    }
+
+    const pickedUp =
+      Phaser.Math.Distance.Between(
+        this.player.sprite.x,
+        this.player.sprite.y,
+        this.donutPickup.x,
+        this.donutPickup.y,
+      ) <=
+      PLAYER_CONFIG.size * 0.75 + PICKUP_CONFIG.healthSize * 0.5;
+
+    if (!pickedUp) {
+      return;
+    }
+
+    this.player.heal(PICKUP_CONFIG.healthHealAmount);
+    this.removeDonutPickup();
   }
 
   private updateLavaHazards(): void {
@@ -382,6 +420,35 @@ export class GameScene extends Phaser.Scene {
     this.burstPickup?.destroy();
     this.burstPickup = undefined;
     this.burstExpiresAt = 0;
+  }
+
+  private trySpawnDonutForWave(wave: number): void {
+    if (wave % 2 !== 0 || this.donutPickup) {
+      return;
+    }
+
+    const point = this.findSafeOpenPoint(PICKUP_CONFIG.shieldPadding);
+    if (!point) {
+      return;
+    }
+
+    const { x, y } = point;
+    const tooCloseToPlayer =
+      Phaser.Math.Distance.Between(x, y, this.player.sprite.x, this.player.sprite.y) <
+      PLAYER_CONFIG.size * 3;
+
+    if (tooCloseToPlayer) {
+      return;
+    }
+
+    this.donutPickup = this.add.image(x, y, 'donutPickup').setDepth(3);
+    this.donutExpiresAt = this.time.now + PICKUP_CONFIG.healthLifetimeMs;
+  }
+
+  private removeDonutPickup(): void {
+    this.donutPickup?.destroy();
+    this.donutPickup = undefined;
+    this.donutExpiresAt = 0;
   }
 
   private spawnEnemyAtEdge(): void {
@@ -870,6 +937,27 @@ export class GameScene extends Phaser.Scene {
     g.fillCircle(PICKUP_CONFIG.burstSize / 2 + 6, PICKUP_CONFIG.burstSize / 2 + 4, 2);
     g.generateTexture('burstPickup', PICKUP_CONFIG.burstSize, PICKUP_CONFIG.burstSize);
 
+    g.clear();
+    g.fillStyle(COLORS.donut, 1);
+    g.fillCircle(
+      PICKUP_CONFIG.healthSize / 2,
+      PICKUP_CONFIG.healthSize / 2,
+      PICKUP_CONFIG.healthSize / 2 - 1,
+    );
+    g.fillStyle(COLORS.donutIcing, 1);
+    g.fillCircle(
+      PICKUP_CONFIG.healthSize / 2,
+      PICKUP_CONFIG.healthSize / 2 - 1,
+      PICKUP_CONFIG.healthSize / 2 - 5,
+    );
+    g.fillStyle(COLORS.arenaBg, 1);
+    g.fillCircle(
+      PICKUP_CONFIG.healthSize / 2,
+      PICKUP_CONFIG.healthSize / 2,
+      Math.floor(PICKUP_CONFIG.healthSize * 0.2),
+    );
+    g.generateTexture('donutPickup', PICKUP_CONFIG.healthSize, PICKUP_CONFIG.healthSize);
+
     g.destroy();
   }
 
@@ -885,6 +973,7 @@ export class GameScene extends Phaser.Scene {
     this.enemyBullets = [];
     this.removeShieldPickup();
     this.removeBurstPickup();
+    this.removeDonutPickup();
   }
 
   private destroyEnemyAt(index: number): void {

@@ -88,6 +88,28 @@ export class Player {
     this.burstActiveUntil = sceneTimeMs + PICKUP_CONFIG.burstDurationMs;
   }
 
+  heal(amount: number): boolean {
+    if (!this.isAlive() || this.health >= PLAYER_CONFIG.maxHealth) {
+      return false;
+    }
+
+    this.health = Math.min(PLAYER_CONFIG.maxHealth, this.health + amount);
+    this.sprite.setTintFill(0xfff1a8);
+    this.sprite.scene.time.delayedCall(PLAYER_CONFIG.damageFlashMs, () => {
+      if (!this.sprite.active) {
+        return;
+      }
+
+      if (this.shieldHits > 0) {
+        this.sprite.setTint(0x9be7ff);
+      } else {
+        this.sprite.clearTint();
+      }
+    });
+
+    return true;
+  }
+
   takeDamage(sceneTimeMs: number, amount: number): boolean {
     if (sceneTimeMs < this.invulnerableUntil || !this.isAlive()) {
       return false;

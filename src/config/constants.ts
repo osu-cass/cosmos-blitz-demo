@@ -63,6 +63,9 @@ export const PICKUP_CONFIG = {
   burstDurationMs: 7000,
   burstShotsPerTap: 3,
   burstSpreadRadians: 0.18,
+  healthSize: 26,
+  healthLifetimeMs: 12000,
+  healthHealAmount: 25,
 };
 
 export const HAZARD_CONFIG = {
@@ -90,6 +93,8 @@ export const COLORS = {
   enemy: 0xff6b6b,
   shield: 0x79f2ff,
   burst: 0xffc857,
+  donut: 0xff9f68,
+  donutIcing: 0xff6fae,
   lavaOuter: 0x702100,
   lavaMid: 0xd9480f,
   lavaInner: 0xffb347,
