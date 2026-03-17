@@ -65,6 +65,17 @@ export const PICKUP_CONFIG = {
   burstSpreadRadians: 0.18,
 };
 
+export const HAZARD_CONFIG = {
+  poolCount: 4,
+  minRadius: 34,
+  maxRadius: 58,
+  edgePadding: 84,
+  playerSpawnSafeRadius: 130,
+  pickupSafeRadius: 96,
+  damage: 8,
+  damageIntervalMs: 700,
+};
+
 export const WAVE_CONFIG = {
   startingEnemies: 4,
   enemiesPerWaveIncrease: 2,
@@ -79,6 +90,9 @@ export const COLORS = {
   enemy: 0xff6b6b,
   shield: 0x79f2ff,
   burst: 0xffc857,
+  lavaOuter: 0x702100,
+  lavaMid: 0xd9480f,
+  lavaInner: 0xffb347,
   uiText: '#ffffff',
   uiShadow: '#000000',
 };

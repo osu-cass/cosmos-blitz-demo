@@ -3,6 +3,7 @@ import {
   BULLET_CONFIG,
   COLORS,
   ENEMY_CONFIG,
+  HAZARD_CONFIG,
   PICKUP_CONFIG,
   PLAYER_CONFIG,
 } from '../config/constants';
@@ -12,6 +13,7 @@ import { Player } from '../entities/Player';
 import { WaveManager } from '../systems/WaveManager';
 
 export class GameScene extends Phaser.Scene {
+  private lavaPools: { x: number; y: number; radius: number }[] = [];
   private backgroundGraphics!: Phaser.GameObjects.Graphics;
   private player!: Player;
   private enemyGroup!: Phaser.Physics.Arcade.Group;
@@ -38,6 +40,7 @@ export class GameScene extends Phaser.Scene {
   private shieldExpiresAt = 0;
   private nextBurstSpawnAt = 0;
   private burstExpiresAt = 0;
+  private lastLavaDamageAt = 0;
   private gameOver = false;
   private isPaused = false;
 
@@ -51,6 +54,7 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.physics.world.setBounds(0, 0, this.scale.width, this.scale.height);
+    this.generateLavaPools();
     this.drawArenaBackground();
 
     this.player = new Player(this, this.scale.width / 2, this.scale.height / 2);
@@ -115,9 +119,24 @@ export class GameScene extends Phaser.Scene {
     this.updateBullets();
     this.updateEnemyBullets();
     this.handleSpawning(delta);
+    this.updateLavaHazards();
     this.updateShieldPickup();
     this.updateBurstPickup();
     this.updateHud();
+  }
+
+  private updateLavaHazards(): void {
+    const playerInLava = this.isPointInLava(this.player.sprite.x, this.player.sprite.y, PLAYER_CONFIG.size * 0.35);
+    if (
+      playerInLava &&
+      this.time.now - this.lastLavaDamageAt >= HAZARD_CONFIG.damageIntervalMs
+    ) {
+      this.lastLavaDamageAt = this.time.now;
+      const didTakeDamage = this.player.takeDamage(this.time.now, HAZARD_CONFIG.damage);
+      if (didTakeDamage && !this.player.isAlive()) {
+        this.setGameOver();
+      }
+    }
   }
 
   private updateEnemies(): void {
@@ -265,14 +284,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnShieldPickup(): void {
-    const x = Phaser.Math.Between(
-      PICKUP_CONFIG.shieldPadding,
-      this.scale.width - PICKUP_CONFIG.shieldPadding,
-    );
-    const y = Phaser.Math.Between(
-      PICKUP_CONFIG.shieldPadding,
-      this.scale.height - PICKUP_CONFIG.shieldPadding,
-    );
+    const point = this.findSafeOpenPoint(PICKUP_CONFIG.shieldPadding);
+    if (!point) {
+      this.nextShieldSpawnAt = this.time.now + 1000;
+      return;
+    }
+
+    const { x, y } = point;
 
     const tooCloseToPlayer =
       Phaser.Math.Distance.Between(x, y, this.player.sprite.x, this.player.sprite.y) <
@@ -331,14 +349,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnBurstPickup(): void {
-    const x = Phaser.Math.Between(
-      PICKUP_CONFIG.shieldPadding,
-      this.scale.width - PICKUP_CONFIG.shieldPadding,
-    );
-    const y = Phaser.Math.Between(
-      PICKUP_CONFIG.shieldPadding,
-      this.scale.height - PICKUP_CONFIG.shieldPadding,
-    );
+    const point = this.findSafeOpenPoint(PICKUP_CONFIG.shieldPadding);
+    if (!point) {
+      this.nextBurstSpawnAt = this.time.now + 1000;
+      return;
+    }
+
+    const { x, y } = point;
 
     const tooCloseToPlayer =
       Phaser.Math.Distance.Between(x, y, this.player.sprite.x, this.player.sprite.y) <
@@ -674,12 +691,88 @@ export class GameScene extends Phaser.Scene {
         bg.fillRect(x + 1, y + 1, tileSize - 2, tileSize - 2);
       }
     }
+
+    for (const pool of this.lavaPools) {
+      bg.fillStyle(COLORS.lavaOuter, 0.95);
+      bg.fillCircle(pool.x, pool.y, pool.radius);
+      bg.fillStyle(COLORS.lavaMid, 0.95);
+      bg.fillCircle(pool.x, pool.y, pool.radius * 0.72);
+      bg.fillStyle(COLORS.lavaInner, 0.95);
+      bg.fillCircle(pool.x, pool.y, pool.radius * 0.38);
+    }
   }
 
   private onResize(width: number, height: number): void {
     this.physics.world.setBounds(0, 0, width, height);
+    this.generateLavaPools();
     this.drawArenaBackground();
     this.gameOverText.setPosition(width / 2, height / 2);
+  }
+
+  private generateLavaPools(): void {
+    this.lavaPools = [];
+
+    for (let i = 0; i < HAZARD_CONFIG.poolCount; i += 1) {
+      let placed = false;
+
+      for (let attempt = 0; attempt < 80; attempt += 1) {
+        const radius = Phaser.Math.Between(HAZARD_CONFIG.minRadius, HAZARD_CONFIG.maxRadius);
+        const x = Phaser.Math.Between(
+          HAZARD_CONFIG.edgePadding + radius,
+          this.scale.width - HAZARD_CONFIG.edgePadding - radius,
+        );
+        const y = Phaser.Math.Between(
+          HAZARD_CONFIG.edgePadding + radius,
+          this.scale.height - HAZARD_CONFIG.edgePadding - radius,
+        );
+
+        const tooCloseToSpawn =
+          Phaser.Math.Distance.Between(x, y, this.scale.width / 2, this.scale.height / 2) <
+          radius + HAZARD_CONFIG.playerSpawnSafeRadius;
+        if (tooCloseToSpawn) {
+          continue;
+        }
+
+        const overlapsExisting = this.lavaPools.some((pool) => {
+          const minGap = radius + pool.radius + 44;
+          return Phaser.Math.Distance.Between(x, y, pool.x, pool.y) < minGap;
+        });
+
+        if (overlapsExisting) {
+          continue;
+        }
+
+        this.lavaPools.push({ x, y, radius });
+        placed = true;
+        break;
+      }
+
+      if (!placed) {
+        break;
+      }
+    }
+  }
+
+  private findSafeOpenPoint(padding: number): { x: number; y: number } | undefined {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const x = Phaser.Math.Between(padding, this.scale.width - padding);
+      const y = Phaser.Math.Between(padding, this.scale.height - padding);
+
+      if (this.isPointInLava(x, y, HAZARD_CONFIG.pickupSafeRadius)) {
+        continue;
+      }
+
+      return { x, y };
+    }
+
+    return undefined;
+  }
+
+  private isPointInLava(x: number, y: number, extraRadius = 0): boolean {
+    return this.lavaPools.some((pool) => {
+      const safeRadius = pool.radius + extraRadius;
+      return Phaser.Math.Distance.Between(x, y, pool.x, pool.y) <= safeRadius;
+    });
   }
 
   private openPauseMenu(): void {
