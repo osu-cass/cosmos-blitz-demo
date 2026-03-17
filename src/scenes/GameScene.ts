@@ -93,6 +93,7 @@ export class GameScene extends Phaser.Scene {
     this.specialEnemyWave = this.observedWave - 1;
     this.blitzEnemyWave = this.observedWave - 1;
     this.burstEnemyWave = this.observedWave - 1;
+    this.refreshArenaHazards();
     this.scheduleNextShieldSpawn();
     this.scheduleNextBurstSpawn();
     this.scheduleNextMinigunSpawn();
@@ -162,6 +163,7 @@ export class GameScene extends Phaser.Scene {
     const currentWave = this.waveManager.getState().currentWave;
     if (currentWave !== this.observedWave) {
       this.observedWave = currentWave;
+      this.refreshArenaHazards();
       this.trySpawnDonutForWave(currentWave);
       this.trySpawnFruitForWave(currentWave);
     }
@@ -220,6 +222,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateLavaHazards(): void {
+    if (!this.areArenaHazardsUnlocked()) {
+      return;
+    }
+
     const playerInLava = this.isPointInLava(this.player.sprite.x, this.player.sprite.y, PLAYER_CONFIG.size * 0.35);
     if (
       playerInLava &&
@@ -234,6 +240,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updatePortal(): void {
+    if (!this.areArenaHazardsUnlocked()) {
+      return;
+    }
+
     if (!this.portal || this.time.now - this.lastPortalTeleportAt < HAZARD_CONFIG.portalTeleportCooldownMs) {
       return;
     }
@@ -1171,11 +1181,25 @@ export class GameScene extends Phaser.Scene {
 
   private onResize(width: number, height: number): void {
     this.physics.world.setBounds(0, 0, width, height);
-    this.generateLavaPools();
-    this.generatePortal();
-    this.drawArenaBackground();
+    this.refreshArenaHazards();
     this.gameOverText.setPosition(width / 2, height / 2);
     this.positionLegend();
+  }
+
+  private areArenaHazardsUnlocked(): boolean {
+    return this.waveManager.getState().currentWave >= 2;
+  }
+
+  private refreshArenaHazards(): void {
+    if (this.areArenaHazardsUnlocked()) {
+      this.generateLavaPools();
+      this.generatePortal();
+    } else {
+      this.lavaPools = [];
+      this.portal = undefined;
+    }
+
+    this.drawArenaBackground();
   }
 
   private positionLegend(): void {
