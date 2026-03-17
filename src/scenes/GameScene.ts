@@ -20,9 +20,11 @@ export class GameScene extends Phaser.Scene {
   private enemyBullets: Bullet[] = [];
   private waveManager = new WaveManager();
   private shieldPickup?: Phaser.GameObjects.Image;
+  private burstPickup?: Phaser.GameObjects.Image;
 
   private healthText!: Phaser.GameObjects.Text;
   private shieldText!: Phaser.GameObjects.Text;
+  private weaponText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private remainingText!: Phaser.GameObjects.Text;
   private gameOverText!: Phaser.GameObjects.Text;
@@ -33,6 +35,8 @@ export class GameScene extends Phaser.Scene {
   private specialEnemyWave = 0;
   private nextShieldSpawnAt = 0;
   private shieldExpiresAt = 0;
+  private nextBurstSpawnAt = 0;
+  private burstExpiresAt = 0;
   private gameOver = false;
   private isPaused = false;
 
@@ -63,6 +67,7 @@ export class GameScene extends Phaser.Scene {
     this.waveManager.startFirstWave();
     this.specialEnemyWave = this.waveManager.getState().currentWave - 1;
     this.scheduleNextShieldSpawn();
+    this.scheduleNextBurstSpawn();
     this.createHud();
 
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -109,6 +114,7 @@ export class GameScene extends Phaser.Scene {
     this.updateEnemyBullets();
     this.handleSpawning(delta);
     this.updateShieldPickup();
+    this.updateBurstPickup();
     this.updateHud();
   }
 
@@ -293,6 +299,72 @@ export class GameScene extends Phaser.Scene {
     this.shieldExpiresAt = 0;
   }
 
+  private updateBurstPickup(): void {
+    if (!this.burstPickup && this.time.now >= this.nextBurstSpawnAt) {
+      this.spawnBurstPickup();
+    }
+
+    if (this.burstPickup && this.time.now >= this.burstExpiresAt) {
+      this.removeBurstPickup();
+      this.scheduleNextBurstSpawn();
+      return;
+    }
+
+    if (!this.burstPickup) {
+      return;
+    }
+
+    const pickedUp = Phaser.Geom.Intersects.RectangleToRectangle(
+      this.player.sprite.getBounds(),
+      this.burstPickup.getBounds(),
+    );
+
+    if (!pickedUp) {
+      return;
+    }
+
+    this.player.grantBurstShot(this.time.now);
+    this.removeBurstPickup();
+    this.scheduleNextBurstSpawn();
+  }
+
+  private spawnBurstPickup(): void {
+    const x = Phaser.Math.Between(
+      PICKUP_CONFIG.shieldPadding,
+      this.scale.width - PICKUP_CONFIG.shieldPadding,
+    );
+    const y = Phaser.Math.Between(
+      PICKUP_CONFIG.shieldPadding,
+      this.scale.height - PICKUP_CONFIG.shieldPadding,
+    );
+
+    const tooCloseToPlayer =
+      Phaser.Math.Distance.Between(x, y, this.player.sprite.x, this.player.sprite.y) <
+      PLAYER_CONFIG.size * 3;
+
+    if (tooCloseToPlayer) {
+      this.nextBurstSpawnAt = this.time.now + 1000;
+      return;
+    }
+
+    this.burstPickup = this.add
+      .image(x, y, 'burstPickup')
+      .setDepth(3);
+    this.burstExpiresAt = this.time.now + PICKUP_CONFIG.burstLifetimeMs;
+  }
+
+  private scheduleNextBurstSpawn(): void {
+    this.nextBurstSpawnAt =
+      this.time.now +
+      Phaser.Math.Between(PICKUP_CONFIG.burstSpawnMinMs, PICKUP_CONFIG.burstSpawnMaxMs);
+  }
+
+  private removeBurstPickup(): void {
+    this.burstPickup?.destroy();
+    this.burstPickup = undefined;
+    this.burstExpiresAt = 0;
+  }
+
   private spawnEnemyAtEdge(): void {
     const point = this.waveManager.getSpawnPosition(this.scale.width, this.scale.height);
     const currentWave = this.waveManager.getState().currentWave;
@@ -322,13 +394,27 @@ export class GameScene extends Phaser.Scene {
 
     direction.normalize();
 
+    if (this.player.hasBurstShot(this.time.now)) {
+      const centerIndex = Math.floor(PICKUP_CONFIG.burstShotsPerTap / 2);
+
+      for (let i = 0; i < PICKUP_CONFIG.burstShotsPerTap; i += 1) {
+        const spreadOffset = (i - centerIndex) * PICKUP_CONFIG.burstSpreadRadians;
+        const burstDirection = direction.clone().rotate(spreadOffset);
+        this.spawnPlayerBullet(burstDirection);
+      }
+    } else {
+      this.spawnPlayerBullet(direction);
+    }
+
+    this.lastShotAtMs = this.time.now;
+  }
+
+  private spawnPlayerBullet(direction: Phaser.Math.Vector2): void {
     const spawnDistance = PLAYER_CONFIG.size / 2 + BULLET_CONFIG.size;
     const spawnX = this.player.sprite.x + direction.x * spawnDistance;
     const spawnY = this.player.sprite.y + direction.y * spawnDistance;
-
     const bullet = new Bullet(this, spawnX, spawnY, direction, this.time.now);
     this.bullets.push(bullet);
-    this.lastShotAtMs = this.time.now;
   }
 
   private updateBullets(): void {
@@ -478,8 +564,9 @@ export class GameScene extends Phaser.Scene {
 
     this.healthText = this.add.text(16, 12, '', style).setDepth(10);
     this.shieldText = this.add.text(16, 44, '', style).setDepth(10);
-    this.waveText = this.add.text(16, 76, '', style).setDepth(10);
-    this.remainingText = this.add.text(16, 108, '', style).setDepth(10);
+    this.weaponText = this.add.text(16, 76, '', style).setDepth(10);
+    this.waveText = this.add.text(16, 108, '', style).setDepth(10);
+    this.remainingText = this.add.text(16, 140, '', style).setDepth(10);
 
     this.add
       .text(this.scale.width - 16, 12, 'ESC to Pause', {
@@ -513,6 +600,7 @@ export class GameScene extends Phaser.Scene {
 
     this.healthText.setText(`Health: ${this.player.getHealth()}/${PLAYER_CONFIG.maxHealth}`);
     this.shieldText.setText(`Shield: ${this.player.hasShield() ? 'READY' : 'NONE'}`);
+    this.weaponText.setText(`Weapon: ${this.player.hasBurstShot(this.time.now) ? 'BURST' : 'NORMAL'}`);
     this.waveText.setText(`Wave: ${waveState.currentWave}`);
 
     if (waveState.inBreak) {
@@ -632,6 +720,19 @@ export class GameScene extends Phaser.Scene {
     );
     g.generateTexture('shieldPickup', PICKUP_CONFIG.shieldSize, PICKUP_CONFIG.shieldSize);
 
+    g.clear();
+    g.fillStyle(COLORS.burst, 1);
+    g.fillCircle(
+      PICKUP_CONFIG.burstSize / 2,
+      PICKUP_CONFIG.burstSize / 2,
+      PICKUP_CONFIG.burstSize / 2 - 2,
+    );
+    g.fillStyle(0x3b2f14, 1);
+    g.fillCircle(PICKUP_CONFIG.burstSize / 2, PICKUP_CONFIG.burstSize / 2 - 5, 2);
+    g.fillCircle(PICKUP_CONFIG.burstSize / 2 - 6, PICKUP_CONFIG.burstSize / 2 + 4, 2);
+    g.fillCircle(PICKUP_CONFIG.burstSize / 2 + 6, PICKUP_CONFIG.burstSize / 2 + 4, 2);
+    g.generateTexture('burstPickup', PICKUP_CONFIG.burstSize, PICKUP_CONFIG.burstSize);
+
     g.destroy();
   }
 
@@ -646,6 +747,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.enemyBullets = [];
     this.removeShieldPickup();
+    this.removeBurstPickup();
   }
 
   private destroyEnemyAt(index: number): void {

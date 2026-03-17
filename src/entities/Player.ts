@@ -21,6 +21,7 @@ export class Player {
 
   private health: number;
   private shieldHits = 0;
+  private burstActiveUntil = 0;
   private invulnerableUntil = 0;
 
   constructor(scene: Phaser.Scene, x: number, y: number) {
@@ -74,9 +75,17 @@ export class Player {
     return this.shieldHits > 0;
   }
 
+  hasBurstShot(sceneTimeMs: number): boolean {
+    return sceneTimeMs < this.burstActiveUntil;
+  }
+
   grantShield(): void {
     this.shieldHits = PICKUP_CONFIG.shieldAbsorbHits;
     this.sprite.setTint(0x9be7ff);
+  }
+
+  grantBurstShot(sceneTimeMs: number): void {
+    this.burstActiveUntil = sceneTimeMs + PICKUP_CONFIG.burstDurationMs;
   }
 
   takeDamage(sceneTimeMs: number, amount: number): boolean {

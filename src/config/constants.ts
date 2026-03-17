@@ -46,6 +46,13 @@ export const PICKUP_CONFIG = {
   shieldLifetimeMs: 9000,
   shieldPadding: 48,
   shieldAbsorbHits: 1,
+  burstSize: 24,
+  burstSpawnMinMs: 9000,
+  burstSpawnMaxMs: 15000,
+  burstLifetimeMs: 9000,
+  burstDurationMs: 7000,
+  burstShotsPerTap: 3,
+  burstSpreadRadians: 0.18,
 };
 
 export const WAVE_CONFIG = {
@@ -61,6 +68,7 @@ export const COLORS = {
   player: 0x44ccff,
   enemy: 0xff6b6b,
   shield: 0x79f2ff,
+  burst: 0xffc857,
   uiText: '#ffffff',
   uiShadow: '#000000',
 };
