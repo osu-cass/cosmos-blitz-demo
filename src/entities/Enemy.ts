@@ -6,6 +6,7 @@ export class Enemy {
   readonly isSpecial: boolean;
   readonly isArmored: boolean;
   readonly isBlitz: boolean;
+  readonly isBurst: boolean;
   private readonly strafeDirection: number;
   private readonly strafePhase: number;
   private readonly attackPhase: number;
@@ -19,11 +20,13 @@ export class Enemy {
     isSpecial = false,
     isArmored = false,
     isBlitz = false,
+    isBurst = false,
   ) {
     this.sprite = scene.physics.add.image(x, y, 'enemy');
     this.isSpecial = isSpecial;
     this.isArmored = isArmored;
     this.isBlitz = isBlitz;
+    this.isBurst = isBurst;
     this.hitsRemaining = this.isArmored ? 2 : 1;
     this.sprite.setCircle(ENEMY_CONFIG.size / 2 - 1);
     const body = this.sprite.body as Phaser.Physics.Arcade.Body;
@@ -44,7 +47,12 @@ export class Enemy {
       this.sprite.setScale(ENEMY_CONFIG.blitzSizeScale);
     }
 
-    if (this.isSpecial || this.isArmored || this.isBlitz) {
+    if (this.isBurst) {
+      this.sprite.setTint(ENEMY_CONFIG.burstTint);
+      this.sprite.setScale(1.18);
+    }
+
+    if (this.isSpecial || this.isArmored || this.isBlitz || this.isBurst) {
       this.nextShotAtMs = scene.time.now + Phaser.Math.Between(500, 900);
     }
     this.strafeDirection = Math.random() < 0.5 ? -1 : 1;
@@ -169,7 +177,7 @@ export class Enemy {
   }
 
   canShoot(nowMs: number): boolean {
-    return (this.isSpecial || this.isArmored || this.isBlitz) && nowMs >= this.nextShotAtMs;
+    return (this.isSpecial || this.isArmored || this.isBlitz || this.isBurst) && nowMs >= this.nextShotAtMs;
   }
 
   takeHit(): boolean {

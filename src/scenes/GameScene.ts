@@ -43,6 +43,7 @@ export class GameScene extends Phaser.Scene {
   private lastShotAtMs = 0;
   private specialEnemyWave = 0;
   private blitzEnemyWave = 0;
+  private burstEnemyWave = 0;
   private observedWave = 0;
   private nextShieldSpawnAt = 0;
   private shieldExpiresAt = 0;
@@ -91,6 +92,7 @@ export class GameScene extends Phaser.Scene {
     this.observedWave = this.waveManager.getState().currentWave;
     this.specialEnemyWave = this.observedWave - 1;
     this.blitzEnemyWave = this.observedWave - 1;
+    this.burstEnemyWave = this.observedWave - 1;
     this.scheduleNextShieldSpawn();
     this.scheduleNextBurstSpawn();
     this.scheduleNextMinigunSpawn();
@@ -697,8 +699,13 @@ export class GameScene extends Phaser.Scene {
       currentWave > 1 &&
       this.blitzEnemyWave !== currentWave &&
       Math.random() < ENEMY_CONFIG.blitzSpawnChance;
+    const shouldSpawnBurst =
+      currentWave > 2 &&
+      !shouldSpawnBlitz &&
+      this.burstEnemyWave !== currentWave &&
+      Math.random() < ENEMY_CONFIG.burstSpawnChance;
     const shouldSpawnArmored =
-      !shouldSpawnBlitz && Math.random() < ENEMY_CONFIG.armoredSpawnChance;
+      !shouldSpawnBlitz && !shouldSpawnBurst && Math.random() < ENEMY_CONFIG.armoredSpawnChance;
     const enemy = new Enemy(
       this,
       point.x,
@@ -706,6 +713,7 @@ export class GameScene extends Phaser.Scene {
       shouldSpawnSpecial,
       shouldSpawnArmored,
       shouldSpawnBlitz,
+      shouldSpawnBurst,
     );
     this.enemies.push(enemy);
     this.enemyGroup.add(enemy.sprite);
@@ -715,6 +723,9 @@ export class GameScene extends Phaser.Scene {
     }
     if (shouldSpawnBlitz) {
       this.blitzEnemyWave = currentWave;
+    }
+    if (shouldSpawnBurst) {
+      this.burstEnemyWave = currentWave;
     }
   }
 
@@ -897,6 +908,7 @@ export class GameScene extends Phaser.Scene {
           'enemyBullet',
           BULLET_CONFIG.enemySpeed,
           BULLET_CONFIG.enemyMaxLifetimeMs,
+          BULLET_CONFIG.enemyDamage,
         );
         this.enemyBullets.push(bullet);
       }
@@ -910,6 +922,7 @@ export class GameScene extends Phaser.Scene {
         'enemyBullet',
         BULLET_CONFIG.enemySpeed,
         BULLET_CONFIG.enemyMaxLifetimeMs,
+        BULLET_CONFIG.enemyDamage,
       );
       this.enemyBullets.push(bullet);
     }
@@ -949,7 +962,10 @@ export class GameScene extends Phaser.Scene {
       bullet.destroy();
       this.enemyBullets.splice(i, 1);
 
-      const didTakeDamage = this.player.takeDamage(this.time.now, BULLET_CONFIG.enemyDamage);
+      const didTakeDamage = this.player.takeDamage(
+        this.time.now,
+        bullet.damage || BULLET_CONFIG.enemyDamage,
+      );
       if (didTakeDamage && !this.player.isAlive()) {
         this.setGameOver();
         return;
@@ -1027,6 +1043,7 @@ export class GameScene extends Phaser.Scene {
       { label: 'Orange shooter', texture: 'enemy', tint: ENEMY_CONFIG.specialTint, scale: 0.86 },
       { label: 'Purple armored', texture: 'enemy', tint: ENEMY_CONFIG.armoredTint, scale: 0.84 },
       { label: 'Cyan blitz', texture: 'enemy', tint: ENEMY_CONFIG.blitzTint, scale: 1 },
+      { label: 'Pink burst', texture: 'enemy', tint: ENEMY_CONFIG.burstTint, scale: 0.9 },
       { label: 'Shield', texture: 'shieldPickup', scale: 0.9 },
       { label: 'Burst', texture: 'burstPickup', scale: 0.88 },
       { label: 'Minigun', texture: 'minigunPickup', scale: 0.88 },
@@ -1482,9 +1499,45 @@ export class GameScene extends Phaser.Scene {
 
   private destroyEnemyAt(index: number): void {
     const enemy = this.enemies[index];
+    if (enemy.isBurst) {
+      this.spawnEnemyDeathBurst(enemy);
+    }
     this.enemyGroup.remove(enemy.sprite, false, false);
     enemy.destroy();
     this.enemies.splice(index, 1);
     this.waveManager.onEnemyDefeated(this);
+  }
+
+  private spawnEnemyDeathBurst(enemy: Enemy): void {
+    const toPlayer = new Phaser.Math.Vector2(
+      this.player.sprite.x - enemy.sprite.x,
+      this.player.sprite.y - enemy.sprite.y,
+    );
+
+    if (toPlayer.lengthSq() < 0.001) {
+      toPlayer.setTo(0, 1);
+    } else {
+      toPlayer.normalize();
+    }
+
+    const centerIndex = Math.floor(ENEMY_CONFIG.deathBurstShotCount / 2);
+    const spawnDistance = ENEMY_CONFIG.size * 0.7 + BULLET_CONFIG.size;
+
+    for (let i = 0; i < ENEMY_CONFIG.deathBurstShotCount; i += 1) {
+      const spreadOffset = (i - centerIndex) * ENEMY_CONFIG.deathBurstSpreadRadians;
+      const direction = toPlayer.clone().rotate(spreadOffset);
+      const bullet = new Bullet(
+        this,
+        enemy.sprite.x + direction.x * spawnDistance,
+        enemy.sprite.y + direction.y * spawnDistance,
+        direction,
+        this.time.now,
+        'enemyBullet',
+        BULLET_CONFIG.enemySpeed,
+        BULLET_CONFIG.enemyMaxLifetimeMs,
+        BULLET_CONFIG.deathBurstDamage,
+      );
+      this.enemyBullets.push(bullet);
+    }
   }
 }
