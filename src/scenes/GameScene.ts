@@ -146,7 +146,7 @@ export class GameScene extends Phaser.Scene {
     this.player.update(this.time.now);
     this.updateEnemies();
     this.updateBullets();
-    this.updateEnemyBullets();
+    this.updateEnemyBullets(delta);
     this.handleSpawning(delta);
     this.updateVolcanoEvent();
     this.updateLavaHazards();
@@ -740,7 +740,8 @@ export class GameScene extends Phaser.Scene {
   private spawnEnemyAtEdge(): void {
     const point = this.waveManager.getSpawnPosition(this.scale.width, this.scale.height);
     const currentWave = this.waveManager.getState().currentWave;
-    const shouldSpawnSpecial = this.specialEnemyWave !== currentWave;
+    const shouldSpawnSpecial =
+      currentWave >= ENEMY_CONFIG.specialMinWave && this.specialEnemyWave !== currentWave;
     const shouldSpawnBlitz =
       currentWave > 1 &&
       this.blitzEnemyWave !== currentWave &&
@@ -985,9 +986,10 @@ export class GameScene extends Phaser.Scene {
     enemy.scheduleNextShot(this.time.now);
   }
 
-  private updateEnemyBullets(): void {
+  private updateEnemyBullets(delta: number): void {
     for (let i = this.enemyBullets.length - 1; i >= 0; i -= 1) {
       const bullet = this.enemyBullets[i];
+      bullet.updateHoming(delta, this.player.sprite.x, this.player.sprite.y);
 
       if (bullet.isExpired(this.time.now)) {
         bullet.destroy();
@@ -1208,12 +1210,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     for (const pool of this.getAllLavaPools()) {
-      bg.fillStyle(COLORS.lavaOuter, 0.95);
-      bg.fillCircle(pool.x, pool.y, pool.radius);
-      bg.fillStyle(COLORS.lavaMid, 0.95);
-      bg.fillCircle(pool.x, pool.y, pool.radius * 0.72);
-      bg.fillStyle(COLORS.lavaInner, 0.95);
-      bg.fillCircle(pool.x, pool.y, pool.radius * 0.38);
+      this.drawPixelLavaPool(bg, pool.x, pool.y, pool.radius);
     }
 
     for (const volcano of this.volcanoes) {
@@ -1239,6 +1236,49 @@ export class GameScene extends Phaser.Scene {
       bg.fillCircle(this.portal.x, this.portal.y, this.portal.radius * 0.72);
       bg.fillStyle(COLORS.portalInner, 0.95);
       bg.fillCircle(this.portal.x, this.portal.y, this.portal.radius * 0.2);
+    }
+  }
+
+  private drawPixelLavaPool(
+    graphics: Phaser.GameObjects.Graphics,
+    centerX: number,
+    centerY: number,
+    radius: number,
+  ): void {
+    const pixelSize = Math.max(6, Math.round(radius / 5));
+    const outerRadius = radius + pixelSize * 0.35;
+    const midRadius = radius * 0.72;
+    const innerRadius = radius * 0.38;
+    const startX = Math.floor((centerX - outerRadius) / pixelSize) * pixelSize;
+    const endX = Math.ceil((centerX + outerRadius) / pixelSize) * pixelSize;
+    const startY = Math.floor((centerY - outerRadius) / pixelSize) * pixelSize;
+    const endY = Math.ceil((centerY + outerRadius) / pixelSize) * pixelSize;
+
+    for (let y = startY; y <= endY; y += pixelSize) {
+      for (let x = startX; x <= endX; x += pixelSize) {
+        const tileCenterX = x + pixelSize / 2;
+        const tileCenterY = y + pixelSize / 2;
+        const distance = Phaser.Math.Distance.Between(centerX, centerY, tileCenterX, tileCenterY);
+
+        if (distance > outerRadius) {
+          continue;
+        }
+
+        const edgeNoise = ((x / pixelSize) * 17 + (y / pixelSize) * 31) % 3;
+        if (distance > radius && edgeNoise === 0) {
+          continue;
+        }
+
+        let color = COLORS.lavaOuter;
+        if (distance <= innerRadius) {
+          color = COLORS.lavaInner;
+        } else if (distance <= midRadius) {
+          color = COLORS.lavaMid;
+        }
+
+        graphics.fillStyle(color, 0.95);
+        graphics.fillRect(x, y, pixelSize, pixelSize);
+      }
     }
   }
 
@@ -1716,12 +1756,7 @@ export class GameScene extends Phaser.Scene {
     g.generateTexture('fruitPickup', PICKUP_CONFIG.healthSize, PICKUP_CONFIG.healthSize);
 
     g.clear();
-    g.fillStyle(COLORS.lavaOuter, 1);
-    g.fillCircle(12, 12, 11);
-    g.fillStyle(COLORS.lavaMid, 1);
-    g.fillCircle(12, 12, 8);
-    g.fillStyle(COLORS.lavaInner, 1);
-    g.fillCircle(12, 12, 4);
+    this.drawPixelLavaPool(g, 12, 12, 11);
     g.generateTexture('lavaLegendIcon', 24, 24);
 
     g.fillStyle(COLORS.portalOuter, 1);
@@ -1793,6 +1828,7 @@ export class GameScene extends Phaser.Scene {
         BULLET_CONFIG.enemySpeed,
         BULLET_CONFIG.enemyMaxLifetimeMs,
         BULLET_CONFIG.deathBurstDamage,
+        { homingTurnRate: BULLET_CONFIG.deathBurstHomingTurnRate },
       );
       this.enemyBullets.push(bullet);
     }

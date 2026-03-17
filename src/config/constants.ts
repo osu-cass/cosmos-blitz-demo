@@ -17,6 +17,7 @@ export const ENEMY_CONFIG = {
   speed: 105,
   touchDamage: 10,
   specialTint: 0xffb347,
+  specialMinWave: 10,
   armoredTint: 0x9d7bff,
   blitzTint: 0x5ce1e6,
   burstTint: 0xff7af6,
@@ -53,6 +54,7 @@ export const BULLET_CONFIG = {
   enemyMaxLifetimeMs: 1800,
   enemyDamage: 10,
   deathBurstDamage: 20,
+  deathBurstHomingTurnRate: 6.5,
   maxLifetimeMs: 1200,
   shootCooldownMs: 130,
 };
