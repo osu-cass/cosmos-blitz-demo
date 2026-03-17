@@ -246,10 +246,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateVolcanoEvent(): void {
-    if (!this.areArenaHazardsUnlocked()) {
+    if (!this.areVolcanoesUnlocked()) {
       if (this.volcanoLavaPools.length > 0 || this.volcanoes.length > 0) {
         this.volcanoLavaPools = [];
         this.volcanoes = [];
+        this.nextVolcanoEventAt = 0;
         this.drawArenaBackground();
       }
       return;
@@ -1270,11 +1271,21 @@ export class GameScene extends Phaser.Scene {
     return this.waveManager.getState().currentWave >= 2;
   }
 
+  private areVolcanoesUnlocked(): boolean {
+    return this.waveManager.getState().currentWave >= 5;
+  }
+
   private refreshArenaHazards(): void {
     if (this.areArenaHazardsUnlocked()) {
       this.generateLavaPools();
       this.generatePortal();
-      this.scheduleNextVolcanoEvent();
+      if (this.areVolcanoesUnlocked()) {
+        this.scheduleNextVolcanoEvent();
+      } else {
+        this.volcanoLavaPools = [];
+        this.volcanoes = [];
+        this.nextVolcanoEventAt = 0;
+      }
     } else {
       this.lavaPools = [];
       this.volcanoLavaPools = [];
