@@ -30,6 +30,7 @@ export class GameScene extends Phaser.Scene {
   private weaponText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private remainingText!: Phaser.GameObjects.Text;
+  private legendContainer!: Phaser.GameObjects.Container;
   private gameOverText!: Phaser.GameObjects.Text;
 
   private spawnTimer = 0;
@@ -719,7 +720,73 @@ export class GameScene extends Phaser.Scene {
       .setDepth(20)
       .setVisible(false);
 
+    this.createLegend();
     this.updateHud();
+  }
+
+  private createLegend(): void {
+    const entries = [
+      { label: 'You', texture: 'player', scale: 0.78 },
+      { label: 'Red enemy', texture: 'enemy', scale: 0.78 },
+      { label: 'Orange shooter', texture: 'enemy', tint: ENEMY_CONFIG.specialTint, scale: 0.86 },
+      { label: 'Purple armored', texture: 'enemy', tint: ENEMY_CONFIG.armoredTint, scale: 0.84 },
+      { label: 'Cyan blitz', texture: 'enemy', tint: ENEMY_CONFIG.blitzTint, scale: 1 },
+      { label: 'Shield', texture: 'shieldPickup', scale: 0.9 },
+      { label: 'Burst', texture: 'burstPickup', scale: 0.88 },
+      { label: 'Donut', texture: 'donutPickup', scale: 0.86 },
+      { label: 'Lava', texture: 'lavaLegendIcon', scale: 0.9 },
+    ];
+    const panelWidth = 320;
+    const rowHeight = 30;
+    const columnWidth = 150;
+    const columnCount = 2;
+    const rowCount = Math.ceil(entries.length / columnCount);
+    const panelHeight = 40 + rowCount * rowHeight + 12;
+
+    const background = this.add
+      .rectangle(0, 0, panelWidth, panelHeight, 0x0b1520, 0.78)
+      .setOrigin(0)
+      .setStrokeStyle(2, 0x89b9d6, 0.8);
+
+    const title = this.add.text(14, 10, 'Legend', {
+      fontFamily: 'Arial',
+      fontSize: '22px',
+      color: COLORS.uiText,
+      stroke: COLORS.uiShadow,
+      strokeThickness: 4,
+    });
+
+    const objects: Phaser.GameObjects.GameObject[] = [background, title];
+
+    entries.forEach((entry, index) => {
+      const column = Math.floor(index / rowCount);
+      const row = index % rowCount;
+      const baseX = 16 + column * columnWidth;
+      const baseY = 44 + row * rowHeight;
+
+      const icon = this.add
+        .image(baseX, baseY + 10, entry.texture)
+        .setOrigin(0, 0.5)
+        .setScale(entry.scale)
+        .setDepth(10);
+
+      if (entry.tint !== undefined) {
+        icon.setTint(entry.tint);
+      }
+
+      const label = this.add.text(baseX + 32, baseY, entry.label, {
+        fontFamily: 'Arial',
+        fontSize: '18px',
+        color: COLORS.uiText,
+        stroke: COLORS.uiShadow,
+        strokeThickness: 3,
+      });
+
+      objects.push(icon, label);
+    });
+
+    this.legendContainer = this.add.container(0, 0, objects).setDepth(10);
+    this.positionLegend();
   }
 
   private updateHud(): void {
@@ -774,6 +841,16 @@ export class GameScene extends Phaser.Scene {
     this.generateLavaPools();
     this.drawArenaBackground();
     this.gameOverText.setPosition(width / 2, height / 2);
+    this.positionLegend();
+  }
+
+  private positionLegend(): void {
+    if (!this.legendContainer) {
+      return;
+    }
+
+    const bounds = this.legendContainer.getBounds();
+    this.legendContainer.setPosition(this.scale.width - bounds.width - 16, 48);
   }
 
   private generateLavaPools(): void {
@@ -957,6 +1034,15 @@ export class GameScene extends Phaser.Scene {
       Math.floor(PICKUP_CONFIG.healthSize * 0.2),
     );
     g.generateTexture('donutPickup', PICKUP_CONFIG.healthSize, PICKUP_CONFIG.healthSize);
+
+    g.clear();
+    g.fillStyle(COLORS.lavaOuter, 1);
+    g.fillCircle(12, 12, 11);
+    g.fillStyle(COLORS.lavaMid, 1);
+    g.fillCircle(12, 12, 8);
+    g.fillStyle(COLORS.lavaInner, 1);
+    g.fillCircle(12, 12, 4);
+    g.generateTexture('lavaLegendIcon', 24, 24);
 
     g.destroy();
   }
