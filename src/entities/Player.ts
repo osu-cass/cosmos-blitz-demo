@@ -28,6 +28,7 @@ export class Player {
   private burstActiveUntil = 0;
   private minigunActiveUntil = 0;
   private laserActiveUntil = 0;
+  private shotgunActiveUntil = 0;
   private speedBoostUntil = 0;
   private luckySpreadUntil = 0;
   private invulnerableUntil = 0;
@@ -114,6 +115,10 @@ export class Player {
     return sceneTimeMs < this.laserActiveUntil;
   }
 
+  hasShotgun(sceneTimeMs: number): boolean {
+    return sceneTimeMs < this.shotgunActiveUntil;
+  }
+
   grantShield(): void {
     this.shieldHits = PICKUP_CONFIG.shieldAbsorbHits;
     this.shieldExpiresAt = 0;
@@ -137,6 +142,10 @@ export class Player {
 
   grantLaser(sceneTimeMs: number): void {
     this.laserActiveUntil = sceneTimeMs + PICKUP_CONFIG.laserDurationMs;
+  }
+
+  grantShotgun(sceneTimeMs: number): void {
+    this.shotgunActiveUntil = sceneTimeMs + PICKUP_CONFIG.shotgunDurationMs;
   }
 
   grantLuckySpeed(sceneTimeMs: number, durationMs: number): void {
@@ -273,6 +282,15 @@ export class Player {
   }
 
   private syncWeaponSprite(): void {
+    const now = this.sprite.scene.time.now;
+    const texture = this.hasLaser(now)
+      ? 'laserWeapon'
+      : this.hasShotgun(now)
+      ? 'shotgunWeapon'
+      : this.hasMinigun(now)
+      ? 'minigunWeapon'
+      : 'normalWeapon';
+    this.weaponSprite.setTexture(texture);
     const offset = PLAYER_CONFIG.size * 0.52;
     const angle = this.sprite.rotation - Math.PI / 2;
     this.weaponSprite.setPosition(

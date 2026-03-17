@@ -3,11 +3,13 @@ import { BULLET_CONFIG } from '../config/constants';
 
 type BulletOptions = {
   homingTurnRate?: number;
+  healOnHitAmount?: number;
 };
 
 export class Bullet {
   readonly sprite: Phaser.Physics.Arcade.Image;
   readonly damage: number;
+  readonly healOnHitAmount: number;
   private readonly expireAtMs: number;
   private readonly speed: number;
   private readonly homingTurnRate: number;
@@ -26,6 +28,7 @@ export class Bullet {
   ) {
     this.sprite = scene.physics.add.image(x, y, texture);
     this.damage = damage;
+    this.healOnHitAmount = options.healOnHitAmount ?? 0;
     this.speed = speed;
     this.homingTurnRate = options.homingTurnRate ?? 0;
     this.sprite.setCircle(BULLET_CONFIG.size / 2 - 1);
