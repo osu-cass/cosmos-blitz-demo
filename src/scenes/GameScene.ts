@@ -37,6 +37,7 @@ export class GameScene extends Phaser.Scene {
   private healthText!: Phaser.GameObjects.Text;
   private shieldText!: Phaser.GameObjects.Text;
   private weaponText!: Phaser.GameObjects.Text;
+  private ammoText!: Phaser.GameObjects.Text;
   private bonusText!: Phaser.GameObjects.Text;
   private waveText!: Phaser.GameObjects.Text;
   private remainingText!: Phaser.GameObjects.Text;
@@ -46,6 +47,9 @@ export class GameScene extends Phaser.Scene {
   private spawnTimer = 0;
   private spawnIntervalMs = 550;
   private lastShotAtMs = 0;
+  private ammoInMagazine = BULLET_CONFIG.magazineSize;
+  private reserveAmmo = BULLET_CONFIG.reserveAmmo;
+  private reloadEndsAtMs = 0;
   private specialEnemyWave = 0;
   private bossEnemyWave = 0;
   private blitzEnemyWave = 0;
@@ -124,7 +128,10 @@ export class GameScene extends Phaser.Scene {
     this.input.keyboard?.on('keydown-R', () => {
       if (this.gameOver) {
         window.location.reload();
+        return;
       }
+
+      this.tryReload();
     });
 
     this.input.keyboard?.on('keydown-ESC', () => {
@@ -859,6 +866,10 @@ export class GameScene extends Phaser.Scene {
   }
 
   private shootToward(targetX: number, targetY: number): void {
+    if (this.reloadEndsAtMs > this.time.now) {
+      return;
+    }
+
     const hasMinigun = this.player.hasMinigun(this.time.now);
     const hasShotgun = this.player.hasShotgun(this.time.now);
     const shootCooldown = hasMinigun
@@ -868,6 +879,11 @@ export class GameScene extends Phaser.Scene {
       : BULLET_CONFIG.shootCooldownMs;
 
     if (this.time.now - this.lastShotAtMs < shootCooldown) {
+      return;
+    }
+
+    if (this.ammoInMagazine <= 0) {
+      this.tryReload();
       return;
     }
 
@@ -914,7 +930,12 @@ export class GameScene extends Phaser.Scene {
       this.spawnPlayerBullet(direction);
     }
 
+    this.ammoInMagazine -= 1;
     this.lastShotAtMs = this.time.now;
+
+    if (this.ammoInMagazine === 0) {
+      this.tryReload();
+    }
   }
 
   private spawnPlayerBullet(direction: Phaser.Math.Vector2, healOnHitAmount = 0): void {
@@ -975,6 +996,30 @@ export class GameScene extends Phaser.Scene {
         this.destroyEnemyAt(i);
       }
     }
+  }
+
+  private tryReload(): void {
+    if (this.reloadEndsAtMs > this.time.now) {
+      return;
+    }
+
+    if (this.ammoInMagazine >= BULLET_CONFIG.magazineSize || this.reserveAmmo <= 0) {
+      return;
+    }
+
+    this.reloadEndsAtMs = this.time.now + BULLET_CONFIG.reloadMs;
+    this.time.delayedCall(BULLET_CONFIG.reloadMs, () => {
+      if (this.gameOver || this.reloadEndsAtMs === 0) {
+        return;
+      }
+
+      const ammoNeeded = BULLET_CONFIG.magazineSize - this.ammoInMagazine;
+      const ammoToLoad = Math.min(ammoNeeded, this.reserveAmmo);
+      this.ammoInMagazine += ammoToLoad;
+      this.reserveAmmo -= ammoToLoad;
+      this.reloadEndsAtMs = 0;
+      this.updateHud();
+    });
   }
 
   private updateBullets(): void {
@@ -1192,9 +1237,10 @@ export class GameScene extends Phaser.Scene {
     this.healthText = this.add.text(16, 12, '', style).setDepth(10);
     this.shieldText = this.add.text(16, 44, '', style).setDepth(10);
     this.weaponText = this.add.text(16, 76, '', style).setDepth(10);
-    this.bonusText = this.add.text(16, 108, '', style).setDepth(10);
-    this.waveText = this.add.text(16, 140, '', style).setDepth(10);
-    this.remainingText = this.add.text(16, 172, '', style).setDepth(10);
+    this.ammoText = this.add.text(16, 108, '', style).setDepth(10);
+    this.bonusText = this.add.text(16, 140, '', style).setDepth(10);
+    this.waveText = this.add.text(16, 172, '', style).setDepth(10);
+    this.remainingText = this.add.text(16, 204, '', style).setDepth(10);
 
     this.add
       .text(this.scale.width - 16, 12, 'ESC to Pause', {
@@ -1309,7 +1355,13 @@ export class GameScene extends Phaser.Scene {
       : this.player.hasBurstShot(this.time.now)
         ? 'BURST'
         : 'NORMAL';
+    const ammoStatus = this.reloadEndsAtMs > this.time.now
+      ? 'RELOADING...'
+      : this.reserveAmmo > 0 || this.ammoInMagazine > 0
+      ? `${this.ammoInMagazine}/${this.reserveAmmo}`
+      : 'EMPTY';
     this.weaponText.setText(`Weapon: ${weaponLabel}`);
+    this.ammoText.setText(`Ammo: ${ammoStatus}`);
     this.bonusText.setText(`Bonus: ${this.getLuckyPowerupLabel()}`);
     this.waveText.setText(`Wave: ${waveState.currentWave}`);
 

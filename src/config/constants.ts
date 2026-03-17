@@ -68,6 +68,9 @@ export const BULLET_CONFIG = {
   deathBurstHomingTurnRate: 6.5,
   maxLifetimeMs: 1200,
   shootCooldownMs: 130,
+  magazineSize: 12,
+  reserveAmmo: 48,
+  reloadMs: 1100,
 };
 
 export const PICKUP_CONFIG = {
